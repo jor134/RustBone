@@ -216,6 +216,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <div>ISLE <b id="v_room">—</b></div>
     <div>ASHORE <b id="v_peers">1</b></div>
     <div id="clockwrap">DAY <b id="v_day">1</b> · <b id="v_tod">06:00</b></div>
+    <div id="cachewrap" style="display:none;color:#c1502e">CACHE <b id="v_cache">—</b></div>
   </div>
   <div id="zonewarn"><div class="z1 dsp">SALVAGE ZONE</div><div class="z2">Blades cut castaways here</div></div>
   <div id="reticle"></div>
@@ -1301,14 +1302,99 @@ function damagePiece(id,dmg){
 }
 
 /* ============================================================
+   DEATH CACHE — everything you were carrying, left where you fell
+   ============================================================ */
+const DROPS=[];
+const DROP_MS=1800000;   // 30 minutes before the tide takes it
+
+function makeDropMesh(rec){
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.7,0.8),toon(0x7d5c34));
+  body.position.y=0.35; addOutline(body,1.05); g.add(body);
+  const lid=new THREE.Mesh(new THREE.BoxGeometry(1.16,0.16,0.86),toon(0x4f3a20));
+  lid.position.y=0.76; addOutline(lid,1.05); g.add(lid);
+  const band=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.1,0.14),toon(0x555c5e));
+  band.position.y=0.5; g.add(band);
+  const pole=new THREE.Mesh(Cyl(0.05,0.065,2.7,5),toon(0x6b5236));
+  pole.position.set(0.62,1.35,0); addOutline(pole,1.11); g.add(pole);
+  const rag=new THREE.Mesh(new THREE.PlaneGeometry(0.72,0.44),
+    new THREE.MeshBasicMaterial({color:0xc1502e,side:THREE.DoubleSide}));
+  rag.position.set(0.98,2.38,0); g.add(rag);
+  // a marker you can find from across the island — and so can everyone else
+  const beam=new THREE.Mesh(Cyl(0.13,0.13,18,6,1,true),
+    new THREE.MeshBasicMaterial({color:0xffb04a,transparent:true,opacity:0.13,
+      depthWrite:false,side:THREE.DoubleSide}));
+  beam.position.set(0.62,9,0); g.add(beam);
+  g.position.set(rec.x,rec.y,rec.z);
+  g.userData.rag=rag;
+  return g;
+}
+function dropKey(id){ return 'sb:'+S.room+':drop:'+id; }
+function spawnDrop(rec){
+  if(DROPS.some(d=>d.id===rec.id)) return;
+  const mesh=makeDropMesh(rec);
+  scene.add(mesh);
+  DROPS.push(Object.assign({},rec,{mesh:mesh}));
+}
+function removeDrop(id){
+  const i=DROPS.findIndex(d=>d.id===id);
+  if(i<0) return;
+  scene.remove(DROPS[i].mesh);
+  DROPS.splice(i,1);
+}
+function itemsCount(items){ let n=0; for(const k in items) n+=items[k]; return n; }
+
+async function dropCache(){
+  const items={};
+  for(const k in S.inv){ if(S.inv[k]>0) items[k]=S.inv[k]; }
+  if(!itemsCount(items)) return null;
+  const id=S.pid+'_'+Date.now().toString(36);
+  const rec={id:id,x:+S.pos.x.toFixed(2),y:+surfaceY(S.pos.x,S.pos.z,S.pos.y).toFixed(2),
+             z:+S.pos.z.toFixed(2),o:S.pid,name:S.name,items:items,at:now()};
+  spawnDrop(rec);
+  S.myDrop=rec;
+  rtcSend({t:'d',op:'add',r:rec},true);
+  try{ await Net.set(dropKey(id),rec); }catch(e){}
+  return rec;
+}
+function lootDrop(d){
+  const parts=[];
+  for(const k in d.items){
+    add(k,d.items[k]);
+    const meta=ITEMS[k]||TOOLS[k]||{n:k};
+    parts.push(d.items[k]+'× '+meta.n);
+  }
+  toast('Recovered: '+parts.join(', '));
+  if(S.myDrop&&S.myDrop.id===d.id) S.myDrop=null;
+  removeDrop(d.id);
+  rtcSend({t:'d',op:'take',id:d.id},true);
+  Net.del(dropKey(d.id));
+  refreshHotbar();
+}
+function nearestDrop(){
+  let best=null,bd=3.2;
+  for(const d of DROPS){
+    const dd=Math.hypot(d.x-S.pos.x,d.z-S.pos.z);
+    if(dd<bd && Math.abs(d.y-S.pos.y)<3){ bd=dd; best=d; }
+  }
+  return best;
+}
+
+/* ============================================================
    BEASTS
    ============================================================ */
+// burstT: seconds it can hold full speed while chasing.
+// restT / restMul: how long it labours afterwards, and how slow.
+// A predator that never tires is not a chase, it is a countdown.
 const BEAST = {
-  boar:   {hp:95, spd:5.6,  dmg:18, reach:2.3, det:15, agg:false, cd:1.5,
+  boar:   {hp:95, spd:5.4,  dmg:18, reach:2.3, det:15, agg:false, cd:1.5,
+           burstT:5.0, restT:4.5, restMul:0.55,
            drop:{meat:3,hide:2}, name:'Boar'},
-  stalker:{hp:72, spd:7.4,  dmg:24, reach:2.7, det:26, agg:true,  cd:1.1,
+  stalker:{hp:72, spd:6.7,  dmg:24, reach:2.7, det:26, agg:true,  cd:1.1,
+           burstT:4.2, restT:5.0, restMul:0.52,
            drop:{meat:2,hide:1,flint:1}, name:'Isle stalker'},
   crab:   {hp:34, spd:3.2,  dmg:9,  reach:1.8, det:7,  agg:false, cd:1.8,
+           burstT:3, restT:3, restMul:0.7,
            drop:{meat:1,fiber:1}, name:'Reef crab'}
 };
 const ANIMALS=[];
@@ -1377,6 +1463,7 @@ function spawnAnimal(type,x,z){
   const a={id:'a'+Math.random().toString(36).slice(2,8),type,mesh:m,
     pos:new THREE.Vector3(x,heightAt(x,z),z), yaw:Math.random()*6.28,
     hp:d.hp, maxhp:d.hp, state:'idle', tx:x, tz:z, timer:0, cd:0,
+    wind:1, tired:0, blown:false,
     alive:true, deadAt:0, harvested:false, gait:0, hurt:0};
   ANIMALS.push(a); return a;
 }
@@ -1428,18 +1515,35 @@ function updateAnimals(dt){
 
     if(a.type==='crab' && S.phase==='play' && dist<d.det && a.hurt<=0) a.state='flee';
 
+    // wind: full tilt for burstT, then it labours and you get your window
+    let mul=1;
+    if(a.state==='chase'){
+      if(a.tired>0){
+        a.tired-=dt; mul=d.restMul||0.55;
+        if(a.tired<=0){ a.wind=1; a.blown=false; }
+      }else{
+        a.wind-=dt/(d.burstT||5);
+        if(a.wind<=0){
+          a.tired=d.restT||4.5;
+          if(!a.blown && dist<24){ a.blown=true; toast(d.name+' is blown — go now'); }
+        }
+      }
+    }else{
+      a.wind=Math.min(1,a.wind+dt/7); a.tired=0; a.blown=false;
+    }
+
     let spd=0;
     if(a.state==='chase'){
       const dir=toP.normalize();
       a.yaw=Math.atan2(dir.x,dir.z);
-      if(dist>d.reach){ spd=d.spd; }
+      if(dist>d.reach){ spd=d.spd*mul; }
       else if(a.cd<=0 && !wallBetween(a.pos.x,a.pos.z,a.pos.y,S.pos.x,S.pos.z)){
         a.cd=d.cd;
         hurtPlayer(d.dmg, d.name+' hits you');
       }
     } else if(a.state==='flee'){
       const dir=toP.negate().normalize();
-      a.yaw=Math.atan2(dir.x,dir.z); spd=d.spd*0.9;
+      a.yaw=Math.atan2(dir.x,dir.z); spd=d.spd*0.9*mul;
       if(dist>d.det*2.2) a.state='idle';
     } else {
       if(a.timer<=0){
@@ -1654,8 +1758,8 @@ function updatePlayer(dt){
   S.vel.x = lerp(S.vel.x, want.x*target, clamp(dt*11,0,1));
   S.vel.z = lerp(S.vel.z, want.z*target, clamp(dt*11,0,1));
 
-  if(IN.sprint && moving) S.stam=clamp(S.stam-12*dt,0,100);
-  else S.stam=clamp(S.stam+9*dt,0,100);
+  if(IN.sprint && moving) S.stam=clamp(S.stam-8.5*dt,0,100);
+  else S.stam=clamp(S.stam+11*dt,0,100);
 
   const prev=S.pos.clone();
   S.pos.x+=S.vel.x*dt; S.pos.z+=S.vel.z*dt;
@@ -1857,6 +1961,8 @@ function toggleDoor(id){
 function doUse(){
   if(S.phase!=='play') return;
   const org=aimOrigin(), dir=aimDir();
+  const cache=nearestDrop();
+  if(cache){ lootDrop(cache); return; }
   const dr=doorNear();
   if(dr){ toggleDoor(dr); return; }
   // harvest a carcass
@@ -2029,6 +2135,11 @@ function updateHUD(){
   const set=(bar,val,lab)=>{ $(bar).firstElementChild.style.width=clamp(val,0,100)+'%'; $(lab).textContent=Math.round(val); };
   set('b_hp',S.hp,'v_hp'); set('b_food',S.food,'v_food');
   set('b_water',S.water,'v_water'); set('b_stam',S.stam,'v_stam');
+  if(S.myDrop && DROPS.some(d=>d.id===S.myDrop.id)){
+    const dd=Math.round(Math.hypot(S.myDrop.x-S.pos.x,S.myDrop.z-S.pos.z));
+    $('v_cache').textContent=dd+'m';
+    $('cachewrap').style.display='block';
+  } else $('cachewrap').style.display='none';
   const lk=rtcLinkCount();
   $('v_peers').textContent = (S.peers.size+1) + (lk?' · P2P '+lk:(S.peers.size?' · relay':''));
   const mins=Math.floor(S.tod*24*60);
@@ -2036,8 +2147,12 @@ function updateHUD(){
   $('v_day').textContent = S.day;
 
   if(!S.buildMode){
-    const dn=doorNear();
-    setPrompt(dn ? (S.builds.get(dn).op ? 'Use — bar the door' : 'Use — open the door') : null);
+    const cd=nearestDrop();
+    if(cd) setPrompt('Use — take the cache ('+itemsCount(cd.items)+' items)');
+    else{
+      const dn=doorNear();
+      setPrompt(dn ? (S.builds.get(dn).op ? 'Use — bar the door' : 'Use — open the door') : null);
+    }
   }
   const zn=insideAnyZone(S.pos.x,S.pos.z);
   $('zonewarn').style.display = zn?'block':'none';
@@ -2077,6 +2192,11 @@ function die(why){
     LS.set('sb_best',JSON.stringify({ms:ms,kills:S.kills,built:S.built,day:S.day}));
   }
   markFortDerelict();
+  dropCache().then(rec=>{
+    $('d_fort').textContent = (rec
+      ? 'Everything you carried is in a marked chest where you fell. Anyone can take it. '
+      : '') + ($('d_fort').textContent||'');
+  });
   $('death').style.display='flex';
   closePanels();
 }
@@ -2237,6 +2357,10 @@ function onRtcMsg(pid,raw){
     }
   }
   else if(m.t==='ai'){ if(hostId!==S.pid) applyRemoteAI(m.l); }
+  else if(m.t==='d'){
+    if(m.op==='add') spawnDrop(m.r);
+    else if(m.op==='take') removeDrop(m.id);
+  }
   else if(m.t==='f'){
     if(m.op==='add') addPiece(m.r,true);
     else if(m.op==='del') removePiece(m.id);
@@ -2408,6 +2532,18 @@ async function slowSync(){
     if(mine.length) await Net.set(K.fort(ME()),{o:ME(),ts:now(),derelict:0,pieces:mine});
     else await Net.del(K.fort(ME()));
   }
+  // pull caches
+  try{
+    const dr=await Net.scan('sb:'+S.room+':drop:');
+    const live=new Set();
+    for(const it of dr){
+      const d=it.value; if(!d||!d.id) continue;
+      if(now()-d.at>DROP_MS){ await Net.del(it.key); continue; }
+      live.add(d.id); spawnDrop(d);
+    }
+    for(const d of DROPS.slice()) if(!live.has(d.id)) removeDrop(d.id);
+  }catch(e){}
+
   // pull all forts
   const items=await Net.scan(K.fPre());
   const keepIds=new Set();
@@ -2571,6 +2707,9 @@ function frame(time){
         flickerTool(selfAvatar,t,0);
         torchLight(S,S.equipped==='torch'&&S.phase==='play',
                    S.pos.x,S.pos.y+1.45,S.pos.z,t);
+      }
+      for(const d of DROPS){
+        if(d.mesh.userData.rag) d.mesh.userData.rag.rotation.y=Math.sin(t*1.7+d.x)*0.5;
       }
       let i=1;
       S.peers.forEach(pr=>{
