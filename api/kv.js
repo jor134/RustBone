@@ -13,10 +13,19 @@ const PREFIX_RE = /^sb:[A-Z0-9]{1,6}:[A-Za-z0-9:_-]{0,90}$/;
 const MAX_VALUE = 220 * 1024;
 const MAX_TTL = 60 * 60 * 24 * 7;
 
+// Vercel injects different names depending on how the store was created:
+// the Upstash integration uses UPSTASH_REDIS_REST_*, the Marketplace/KV path
+// uses KV_REST_API_*. Accept every spelling rather than making you rename them.
+function creds() {
+  const e = process.env;
+  const url = e.UPSTASH_REDIS_REST_URL || e.KV_REST_API_URL || e.REDIS_REST_URL || '';
+  const token = e.UPSTASH_REDIS_REST_TOKEN || e.KV_REST_API_TOKEN || e.REDIS_REST_TOKEN || '';
+  return { url, token };
+}
+
 async function redis(cmd) {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) throw new Error('Upstash env vars are not set');
+  const { url, token } = creds();
+  if (!url || !token) throw new Error('no Upstash URL/token in the environment');
   const r = await fetch(url, {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
@@ -31,12 +40,32 @@ async function redis(cmd) {
 module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   try {
-    const configured = !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
-
     if (req.method === 'GET') {
       const { op, key, prefix } = req.query;
 
-      if (op === 'ping') return res.status(200).json({ ok: configured });
+      if (op === 'ping') {
+        const { url, token } = creds();
+        // which relevant names actually exist, so you can see the mismatch
+        const found = Object.keys(process.env)
+          .filter(k => /UPSTASH|KV_REST|REDIS/i.test(k)).sort();
+        if (!url || !token) {
+          return res.status(200).json({
+            ok: false, live: false, found,
+            error: 'Function is deployed but no Upstash URL/token is set. ' +
+                   'Env vars visible to it: ' + (found.join(', ') || 'none') +
+                   '. Note env vars only apply to deployments made AFTER you add them — redeploy.'
+          });
+        }
+        try {
+          // real round trip: catches a wrong or expired token, which a
+          // presence check alone would miss
+          await redis(['SET', 'sb:DIAG:ping', String(Date.now()), 'EX', '60']);
+          const v = await redis(['GET', 'sb:DIAG:ping']);
+          return res.status(200).json({ ok: true, live: !!v, found });
+        } catch (e) {
+          return res.status(200).json({ ok: true, live: false, found, error: String(e.message || e) });
+        }
+      }
 
       if (op === 'get') {
         if (!KEY_RE.test(key || '')) return res.status(400).json({ error: 'bad key' });
