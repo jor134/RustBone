@@ -1126,67 +1126,109 @@ function terrainSpread(cx,cz){
           avg:(h[0]+h[1]+h[2]+h[3])/4};
 }
 
-// Aim at the world and produce a candidate piece record (or a reason it fails)
+// Where a piece goes.
+//
+// This used to march a ray from the CAMERA until it dropped below ground. In
+// third person the camera sits 4.4 m behind you, so a near-level look only met
+// the ground ten metres out — two cells past the floor you were standing on.
+// Floors were unaffected (they can sit on bare terrain anywhere), so everything
+// looked fine until you tried to raise a wall.
+//
+// Now it works off the player, not the camera: test the cell you stand on
+// first, then the cells directly ahead, and take the first that satisfies the
+// piece. Look up to build the storey above.
 function ghostRecord(){
   const p=PIECES[S.pieceIdx];
-  const dir=AIM.dir.clone();
-  const org=AIM.org.clone();
-  // march the ray until it goes under the walkable surface
-  let hit=null;
-  for(let d=1.2; d<14; d+=0.35){
-    const q=org.clone().addScaledVector(dir,d);
-    if(q.y <= surfaceY(q.x,q.z,q.y+1.0)+0.05){ hit=q; break; }
+
+  const fd=AIM.dir.clone(); fd.y=0;
+  if(fd.lengthSq()<1e-6) fd.set(-Math.sin(S.yaw),0,-Math.cos(S.yaw));
+  fd.normalize();
+
+  const feet=new THREE.Vector3(S.pos.x,S.pos.y,S.pos.z);
+  const aimPt=feet.clone().addScaledVector(fd,C*0.8);
+  const lvBias = AIM.dir.y>0.30 ? 1 : (AIM.dir.y<-0.50 ? -1 : 0);
+
+  const cells=[], seen={};
+  for(const dd of [0, C*0.9, C*1.7, C*2.4]){
+    const q=feet.clone().addScaledVector(fd,dd);
+    const gx=Math.round(q.x/C), gz=Math.round(q.z/C);
+    const k=gx+','+gz;
+    if(!seen[k]){ seen[k]=1; cells.push([gx,gz]); }
   }
-  if(!hit) hit=org.clone().addScaledVector(dir,7);
+  const storey=(gx,gz)=>{
+    const base=columnBase(gx,gz);
+    if(base===null) return {base:null,lv:clamp(lvBias,0,6)};
+    return {base:base, lv:clamp(Math.round((feet.y-base)/L)+lvBias,0,6)};
+  };
 
-  const gx=Math.round(hit.x/C), gz=Math.round(hit.z/C);
-  const cx=gx*C, cz=gz*C;
-  const base=columnBase(gx,gz);
-  let lv=0;
-  if(base!==null) lv=clamp(Math.round((hit.y-base)/L),0,6);
+  const rec={t:p.id,gx:0,gz:0,lv:0,s:0,y:0,hp:p.hp,o:ME()};
 
-  const rec={t:p.id,gx,gz,lv,s:S.pieceRot&3,y:0,hp:p.hp,o:ME()};
-
+  /* ---- floors sit on terrain or on the storey below ---- */
   if(p.id==='f'){
-    if(lv===0){
-      let y=null;
-      const nb=[[1,0],[-1,0],[0,1],[0,-1]];
-      for(const n of nb){ const f=foundationAt(gx+n[0],gz+n[1],0); if(f){ y=f.y; break; } }
-      if(y===null){
-        const sp=terrainSpread(cx,cz);
-        if(sp.max-sp.min>2.0) return {rec:null,why:'Ground too broken'};
-        if(sp.min<0.55) return {rec:null,why:'Too close to the tide'};
-        y=Math.round((sp.avg+0.25)*4)/4;
+    let why='Nowhere to lay a floor';
+    for(const c of cells){
+      const gx=c[0], gz=c[1], cx=gx*C, cz=gz*C;
+      const st=storey(gx,gz);
+      const lv=st.lv;
+      if(foundationAt(gx,gz,lv)) continue;
+      if(lv===0){
+        let y=null;
+        for(const n of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const f=foundationAt(gx+n[0],gz+n[1],0);
+          if(f){ y=f.y; break; }            // inherit so forts stay level on a slope
+        }
+        if(y===null){
+          const sp=terrainSpread(cx,cz);
+          if(sp.max-sp.min>2.0){ why='Ground too broken there'; continue; }
+          if(sp.min<0.55){ why='Too close to the tide'; continue; }
+          y=Math.round((sp.avg+0.25)*4)/4;
+        }
+        rec.gx=gx; rec.gz=gz; rec.lv=0; rec.y=y;
+        return {rec:rec,why:null};
       }
-      rec.y=y;
-    }else{
-      if(base===null) return {rec:null,why:'Nothing beneath'};
+      if(st.base===null){ why='Nothing beneath'; continue; }
       let sup=false;
-      for(let s=0;s<4;s++) if(wallOnSide(gx,gz,lv-1,s)||findPiece('p',gx,gz,lv-1,s)) sup=true;
-      if(!sup) return {rec:null,why:'Needs walls below'};
-      rec.y=base+lv*L;
+      for(let sd=0;sd<4;sd++)
+        if(wallOnSide(gx,gz,lv-1,sd)||findPiece('p',gx,gz,lv-1,sd)) sup=true;
+      if(!sup){ why='Needs walls below to carry it'; continue; }
+      rec.gx=gx; rec.gz=gz; rec.lv=lv; rec.y=st.base+lv*L;
+      return {rec:rec,why:null};
     }
-    if(foundationAt(gx,gz,lv)) return {rec:null,why:'Already floored'};
-  } else {
-    const f=foundationAt(gx,gz,lv);
-    if(!f) return {rec:null,why:'Needs a floor'};
-    rec.y=f.y;
-    if(p.id==='w'||p.id==='d'||p.id==='dr'){
-      // side facing the player
-      const dx=hit.x-cx, dz=hit.z-cz;
-      rec.s = Math.abs(dx)>Math.abs(dz) ? (dx>0?0:2) : (dz>0?1:3);
-      if(wallOnSide(gx,gz,lv,rec.s)) return {rec:null,why:'Something already fills that side'};
-      if(p.id==='dr') rec.op=0;
-    } else if(p.id==='p'){
-      const dx=hit.x-cx, dz=hit.z-cz;
-      rec.s = dz>0 ? (dx>0?0:1) : (dx>0?3:2);
-      if(findPiece('p',gx,gz,lv,rec.s)) return {rec:null,why:'Pillar already there'};
-    } else {
-      rec.s=0;
-      if(findPiece(p.id,gx,gz,lv,0)) return {rec:null,why:'Already placed'};
-    }
+    return {rec:null,why:why};
   }
-  return {rec,why:null};
+
+  /* ---- everything else needs a floor under it ---- */
+  let why='Stand on a floor to build that';
+  for(const c of cells){
+    const gx=c[0], gz=c[1], cx=gx*C, cz=gz*C;
+    const st=storey(gx,gz);
+    if(st.base===null) continue;
+    const lv=st.lv;
+    const f=foundationAt(gx,gz,lv);
+    if(!f){ why='No floor at that height'; continue; }
+
+    rec.gx=gx; rec.gz=gz; rec.lv=lv; rec.y=f.y;
+
+    if(p.id==='w'||p.id==='d'||p.id==='dr'){
+      const dx=aimPt.x-cx, dz=aimPt.z-cz;
+      const auto = Math.abs(dx)>Math.abs(dz) ? (dx>0?0:2) : (dz>0?1:3);
+      rec.s=(auto+S.pieceRot)&3;            // Turn overrides the auto side
+      if(wallOnSide(gx,gz,lv,rec.s)){ why='That side is already filled'; continue; }
+      if(p.id==='dr') rec.op=0;
+    }
+    else if(p.id==='p'){
+      const dx=aimPt.x-cx, dz=aimPt.z-cz;
+      const auto = dz>0 ? (dx>0?0:1) : (dx>0?3:2);
+      rec.s=(auto+S.pieceRot)&3;
+      if(findPiece('p',gx,gz,lv,rec.s)){ why='Pillar already there'; continue; }
+    }
+    else{
+      rec.s=0;
+      if(findPiece(p.id,gx,gz,lv,0)){ why='Already placed here'; continue; }
+    }
+    return {rec:rec,why:null};
+  }
+  return {rec:null,why:why};
 }
 
 let ghostMesh=null, ghostOK=false, ghostRec=null;
@@ -2128,7 +2170,7 @@ function renderBuildBar(){
     bar.innerHTML='';
     PIECES.forEach((p,i)=>{
       const b=document.createElement('button'); b.className='pbtn'; b.dataset.i=i;
-      b.addEventListener('click',()=>{ S.pieceIdx=i; renderBuildBar(); });
+      b.addEventListener('click',()=>{ S.pieceIdx=i; S.pieceRot=0; renderBuildBar(); });
       bar.appendChild(b);
     });
   }
