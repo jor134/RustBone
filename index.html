@@ -51,7 +51,8 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 #vrbtn{max-width:330px;width:100%;padding:11px;font-size:11px;letter-spacing:.2em;
   text-transform:uppercase;border:1px solid #2c4048;border-radius:3px;color:#8d9aa1;display:none}
 #boot .note{max-width:340px;font-size:10px;line-height:1.6;color:#5e6f77;text-align:center}
-#netbadge{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:#5e6f77}
+#netbadge{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:#5e6f77;
+  cursor:pointer;pointer-events:auto;padding:4px 8px;border:1px dashed #2c4048;border-radius:3px}
 #best{font-size:10px;color:#6f8189;letter-spacing:.1em}
 
 /* ---------- HUD ---------- */
@@ -345,13 +346,25 @@ function toast(msg){
 const Net = {
   mode: 'memory',
   mem: new Map(),
+  diag:'not checked yet',
   label(){ return {upstash:'UPSTASH KV',claude:'ARTIFACT STORAGE',memory:'LOCAL ONLY — no multiplayer'}[this.mode]; },
 
   async detect(){
     try{
       const r = await fetch('/api/kv?op=ping', {cache:'no-store'});
-      if(r.ok){ const j = await r.json(); if(j && j.ok){ this.mode='upstash'; return; } }
-    }catch(e){}
+      if(r.ok){
+        const j = await r.json();
+        if(j && j.ok && j.live){ this.mode='upstash'; this.diag='Connected.'; return; }
+        this.diag = (j && j.error) ? j.error
+          : 'Proxy answered but the store is not live. Env vars it can see: '+
+            (((j&&j.found)||[]).join(', ')||'none');
+      } else {
+        this.diag = '/api/kv returned HTTP '+r.status+
+          (r.status===404 ? ' — the function is not deployed. It must sit at api/kv.js in the REPO ROOT, not next to index.html in a subfolder.' : '');
+      }
+    }catch(e){
+      this.diag='/api/kv could not be reached ('+e.message+'). Either this build is not on Vercel, or the deploy failed.';
+    }
     if(typeof window.storage!=='undefined' && window.storage && window.storage.set){
       try{ await window.storage.set('sb:probe','1',true); this.mode='claude'; return; }catch(e){}
     }
@@ -865,6 +878,7 @@ const PIECES = [
   {id:'f',  name:'Floor',    cost:{wood:6},           hp:180},
   {id:'w',  name:'Wall',     cost:{wood:4},           hp:140},
   {id:'d',  name:'Doorway',  cost:{wood:5},           hp:130},
+  {id:'dr', name:'Door',     cost:{wood:6,fiber:4},   hp:155},
   {id:'r',  name:'Roof',     cost:{wood:5,fiber:2},   hp:120},
   {id:'p',  name:'Pillar',   cost:{wood:3},           hp:160},
   {id:'box',name:'Chest',    cost:{wood:8,fiber:4},   hp:90},
@@ -901,18 +915,77 @@ function makeAvatar(tint,accent){
     const arm=new THREE.Mesh(Cyl(0.1,0.09,0.7,6),skin);
     arm.position.y=-0.35; addOutline(arm,1.1); armPivot.add(arm); arms.push(armPivot);
   }
-  // held tool
-  const hand=new THREE.Group(); hand.position.y=-0.66; arms[1].add(hand);
-  const tool=new THREE.Mesh(new THREE.BoxGeometry(0.08,1.0,0.08),toon(0x6b5236));
-  tool.position.y=-0.2; hand.add(tool); tool.visible=false;
-  const head2=new THREE.Mesh(new THREE.BoxGeometry(0.28,0.2,0.1),toon(0x8b8b84));
-  head2.position.y=-0.66; hand.add(head2); head2.visible=false;
+  // tool socket at the end of the right arm
+  const hand=new THREE.Group(); hand.position.set(0,-0.72,0.06); arms[1].add(hand);
   // blob shadow
   const sh=new THREE.Mesh(new THREE.CircleGeometry(0.45,14),
     new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.26,depthWrite:false}));
   sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
-  g.userData={legs,arms,tool,toolHead:sh?head2:null,shadow:sh,walk:0,swing:0};
+  g.userData={legs,arms,hand:hand,tool:null,toolId:null,shadow:sh,walk:0,swing:0};
   return g;
+}
+
+/* --- held tools, built from the same low-poly vocabulary as everything else --- */
+function toolModel(id){
+  if(!id||id==='hands') return null;
+  const g=new THREE.Group();
+  const shaft=(len,r,col)=>{
+    const m=new THREE.Mesh(Cyl(r,r*1.15,len,6),toon(col||0x7a5a38));
+    addOutline(m,1.12); return m;
+  };
+  if(id==='axe'){
+    const h=shaft(0.88,0.045); h.position.y=-0.2; g.add(h);
+    const bit=new THREE.Mesh(new THREE.BoxGeometry(0.27,0.21,0.07),toon(0x9a9890));
+    bit.position.set(0.1,0.17,0); bit.rotation.z=-0.28; addOutline(bit,1.07); g.add(bit);
+    const lash=new THREE.Mesh(Cyl(0.056,0.056,0.11,6),toon(0x53412c)); lash.position.y=0.16; g.add(lash);
+  }else if(id==='pick'){
+    const h=shaft(0.88,0.045); h.position.y=-0.2; g.add(h);
+    const head=new THREE.Mesh(new THREE.BoxGeometry(0.46,0.075,0.075),toon(0x8e8b82));
+    head.position.y=0.21; head.rotation.z=0.2; addOutline(head,1.08); g.add(head);
+    const lash=new THREE.Mesh(Cyl(0.056,0.056,0.11,6),toon(0x53412c)); lash.position.y=0.2; g.add(lash);
+  }else if(id==='spear'){
+    const h=shaft(1.75,0.038); h.position.y=-0.22; g.add(h);
+    const tip=new THREE.Mesh(Cone(0.07,0.36,5),toon(0xe0d7c2)); tip.position.y=0.76; addOutline(tip,1.09); g.add(tip);
+    const bind=new THREE.Mesh(Cyl(0.05,0.05,0.13,6),toon(0x53412c)); bind.position.y=0.57; g.add(bind);
+  }else if(id==='torch'){
+    const h=shaft(0.72,0.04,0x6b5236); h.position.y=-0.16; g.add(h);
+    const wrap=new THREE.Mesh(Cyl(0.095,0.07,0.22,6),toon(0x4a3a26));
+    wrap.position.y=0.26; addOutline(wrap,1.07); g.add(wrap);
+    const flame=new THREE.Mesh(Cone(0.12,0.38,6),
+      new THREE.MeshBasicMaterial({color:0xffa838,transparent:true,opacity:0.92}));
+    flame.position.y=0.53; g.add(flame);
+    const core=new THREE.Mesh(Cone(0.06,0.21,6),new THREE.MeshBasicMaterial({color:0xfff2cc}));
+    core.position.y=0.48; g.add(core);
+    g.userData.flame=flame; g.userData.core=core;
+  }
+  g.rotation.set(-0.34,0,-0.1);
+  return g;
+}
+function setAvatarTool(av,id){
+  const u=av.userData;
+  if(u.toolId===id) return;
+  u.toolId=id;
+  if(u.tool){ u.hand.remove(u.tool); u.tool=null; }
+  const m=toolModel(id);
+  if(m){ u.hand.add(m); u.tool=m; }
+}
+// The torch light lives in the scene, not on the avatar: three skips lights
+// parented to an invisible object, so a child light would die in first person.
+function torchLight(holder,on,x,y,z,t){
+  if(on && !holder.light){ holder.light=new THREE.PointLight(0xff9a44,0,18,1.7); scene.add(holder.light); }
+  if(!holder.light) return;
+  holder.light.visible=on;
+  if(on){
+    holder.light.position.set(x,y,z);
+    holder.light.intensity=1.75+Math.sin(t*17)*0.3+Math.sin(t*41)*0.12;
+  }
+}
+function flickerTool(av,t,seed){
+  const u=av.userData;
+  if(!u.tool||!u.tool.userData.flame) return;
+  const k=0.86+Math.sin(t*16+seed)*0.12+Math.sin(t*37+seed)*0.05;
+  u.tool.userData.flame.scale.set(k,1+Math.sin(t*11+seed)*0.2,k);
+  u.tool.userData.core.scale.set(k,k,k);
 }
 function animateAvatar(av,speed,dt,swing){
   const u=av.userData; u.walk+=dt*speed*2.6;
@@ -978,6 +1051,24 @@ function buildPieceMesh(rec,ghost){
       side.position.set(i*(C-0.06+1.7)/4, -(L-2.1)/2, 0); g.add(side);
     }
   }
+  else if(rec.t==='dr'){
+    const top=mk(new THREE.BoxGeometry(C-0.06,L-2.1,0.26),WOOD_B);
+    top.position.y=L/2-(L-2.1)/2; g.add(top);
+    for(let i=-1;i<=1;i+=2){
+      const side=mk(new THREE.BoxGeometry((C-0.06-1.72)/2,2.1,0.26),WOOD_B);
+      side.position.set(i*(C-0.06+1.72)/4, -(L-2.1)/2, 0); g.add(side);
+    }
+    const pivot=new THREE.Group();
+    pivot.position.set(-0.86,-(L-2.1)/2,0); g.add(pivot);
+    const panel=mk(new THREE.BoxGeometry(1.7,2.06,0.14),0x5d4527);
+    panel.position.set(0.85,0,0.02); pivot.add(panel);
+    const bar=mk(new THREE.BoxGeometry(1.5,0.14,0.2),0x7a5a3a);
+    bar.position.set(0.85,0.2,0.14); pivot.add(bar);
+    const handle=mk(new THREE.BoxGeometry(0.09,0.09,0.22),0x8e8b82);
+    handle.position.set(1.52,-0.1,0.14); pivot.add(handle);
+    pivot.rotation.y = rec.op?-1.55:0;
+    g.userData.pivot=pivot; g.userData.targetRot=rec.op?-1.55:0;
+  }
   else if(rec.t==='r'){ g.add(mk(BGEO.r,0x7a5a3a)); }
   else if(rec.t==='p'){ g.add(mk(BGEO.p,WOOD_B)); }
   else if(rec.t==='box'){
@@ -1008,17 +1099,21 @@ function addPiece(rec,silent){
   const m=buildPieceMesh(rec,false);
   m.userData.id=id;
   scene.add(m); S.buildMeshes.set(id,m);
-  if(!silent && rec.o===ME()) S.built++;
+  if(!silent && rec.o===ME()){ S.built++; rtcSend({t:'f',op:'add',r:rec},true); }
 }
-function removePiece(id){
+function removePiece(id,local){
   const m=S.buildMeshes.get(id);
   if(m){ scene.remove(m); S.buildMeshes.delete(id); }
   S.builds.delete(id);
+  if(local) rtcSend({t:'f',op:'del',id:id},true);
 }
 function findPiece(t,gx,gz,lv,s){
   return S.builds.get(t+':'+gx+':'+gz+':'+lv+':'+(s||0))||null;
 }
 function foundationAt(gx,gz,lv){ return findPiece('f',gx,gz,lv,0); }
+function wallOnSide(gx,gz,lv,sd){
+  return findPiece('w',gx,gz,lv,sd)||findPiece('d',gx,gz,lv,sd)||findPiece('dr',gx,gz,lv,sd);
+}
 function columnBase(gx,gz){
   const f0=foundationAt(gx,gz,0); return f0?f0.y:null;
 }
@@ -1066,7 +1161,7 @@ function ghostRecord(){
     }else{
       if(base===null) return {rec:null,why:'Nothing beneath'};
       let sup=false;
-      for(let s=0;s<4;s++) if(findPiece('w',gx,gz,lv-1,s)||findPiece('d',gx,gz,lv-1,s)||findPiece('p',gx,gz,lv-1,s)) sup=true;
+      for(let s=0;s<4;s++) if(wallOnSide(gx,gz,lv-1,s)||findPiece('p',gx,gz,lv-1,s)) sup=true;
       if(!sup) return {rec:null,why:'Needs walls below'};
       rec.y=base+lv*L;
     }
@@ -1075,11 +1170,12 @@ function ghostRecord(){
     const f=foundationAt(gx,gz,lv);
     if(!f) return {rec:null,why:'Needs a floor'};
     rec.y=f.y;
-    if(p.id==='w'||p.id==='d'){
+    if(p.id==='w'||p.id==='d'||p.id==='dr'){
       // side facing the player
       const dx=hit.x-cx, dz=hit.z-cz;
       rec.s = Math.abs(dx)>Math.abs(dz) ? (dx>0?0:2) : (dz>0?1:3);
-      if(findPiece('w',gx,gz,lv,rec.s)||findPiece('d',gx,gz,lv,rec.s)) return {rec:null,why:'Wall already there'};
+      if(wallOnSide(gx,gz,lv,rec.s)) return {rec:null,why:'Something already fills that side'};
+      if(p.id==='dr') rec.op=0;
     } else if(p.id==='p'){
       const dx=hit.x-cx, dz=hit.z-cz;
       rec.s = dz>0 ? (dx>0?0:1) : (dx>0?3:2);
@@ -1136,9 +1232,46 @@ function surfaceY(x,z,feetY){
   return best;
 }
 /* --- push the player out of walls --- */
+// true when this piece lets a body pass at that point (open doorway / open door)
+function passable(r,along,feetY){
+  if(r.t!=='d' && !(r.t==='dr' && r.op)) return false;
+  return Math.abs(along)<0.85 && feetY < r.y+2.0;
+}
+// first blocking piece overlapping a circle — beasts test moves with this
+function wallAt(x,z,feetY,radius){
+  let hitId=null;
+  S.builds.forEach((r,id)=>{
+    if(hitId) return;
+    if(r.t!=='w'&&r.t!=='d'&&r.t!=='p'&&r.t!=='dr') return;
+    if(feetY > r.y+L-0.15 || feetY+1.2 < r.y+0.1) return;
+    const cx=r.gx*C, cz=r.gz*C;
+    if(r.t==='p'){
+      const px=cx+(r.s===0||r.s===3?C/2:-C/2), pz=cz+(r.s<2?C/2:-C/2);
+      if(Math.hypot(x-px,z-pz)<radius+0.24) hitId=id;
+      return;
+    }
+    const off=sideOffset(r.s);
+    const wx=cx+off[0], wz=cz+off[1];
+    const alongX=(r.s===1||r.s===3);
+    const along = alongX ? x-wx : z-wz;
+    const perp  = alongX ? z-wz : x-wx;
+    if(Math.abs(along) > C/2 + radius) return;
+    if(passable(r,along,feetY)) return;
+    if(Math.abs(perp) < radius+0.16) hitId=id;
+  });
+  return hitId;
+}
+// is there a wall between two points? stops beasts biting through a wall
+function wallBetween(ax,az,ay,bx,bz){
+  for(let i=1;i<=5;i++){
+    const k=i/6;
+    if(wallAt(ax+(bx-ax)*k, az+(bz-az)*k, ay, 0.05)) return true;
+  }
+  return false;
+}
 function resolveWalls(pos,radius,feetY){
   S.builds.forEach(r=>{
-    if(r.t!=='w'&&r.t!=='d'&&r.t!=='p') return;
+    if(r.t!=='w'&&r.t!=='d'&&r.t!=='p'&&r.t!=='dr') return;
     if(feetY > r.y+L-0.15 || feetY+1.6 < r.y+0.1) return;
     const cx=r.gx*C, cz=r.gz*C;
     if(r.t==='p'){
@@ -1153,7 +1286,7 @@ function resolveWalls(pos,radius,feetY){
     const along = alongX ? pos.x-wx : pos.z-wz;
     const perp  = alongX ? pos.z-wz : pos.x-wx;
     if(Math.abs(along) > C/2 + radius) return;
-    if(r.t==='d' && Math.abs(along)<0.85 && feetY < r.y+2.0) return;   // walk through the gap
+    if(passable(r,along,feetY)) return;
     const lim=radius+0.16;
     if(Math.abs(perp)<lim){
       const push=(lim-Math.abs(perp))*(perp<0?-1:1);
@@ -1164,7 +1297,7 @@ function resolveWalls(pos,radius,feetY){
 function damagePiece(id,dmg){
   const r=S.builds.get(id); if(!r) return;
   r.hp-=dmg;
-  if(r.hp<=0){ removePiece(id); toast('Structure broken'); pushFort(); }
+  if(r.hp<=0){ removePiece(id,true); toast('Structure broken'); pushFort(); }
 }
 
 /* ============================================================
@@ -1300,7 +1433,7 @@ function updateAnimals(dt){
       const dir=toP.normalize();
       a.yaw=Math.atan2(dir.x,dir.z);
       if(dist>d.reach){ spd=d.spd; }
-      else if(a.cd<=0){
+      else if(a.cd<=0 && !wallBetween(a.pos.x,a.pos.z,a.pos.y,S.pos.x,S.pos.z)){
         a.cd=d.cd;
         hurtPlayer(d.dmg, d.name+' hits you');
       }
@@ -1321,7 +1454,19 @@ function updateAnimals(dt){
       const nx=a.pos.x+Math.sin(a.yaw)*spd*dt, nz=a.pos.z+Math.cos(a.yaw)*spd*dt;
       const nh=heightAt(nx,nz);
       const ok = Math.hypot(nx,nz)<CFG.WORLD*0.47 && nh>0.4 && slopeAt(nx,nz)<1.8;
-      if(ok){ a.pos.set(nx,nh,nz); } else { a.timer=0; a.yaw+=2.1; }
+      const wall = ok ? wallAt(nx,nz,a.pos.y,0.55) : null;
+      if(wall){
+        // it wants in. It cannot walk in, so it works on the wall.
+        if(a.state==='chase' && a.cd<=0){
+          a.cd=d.cd*1.4;
+          damagePiece(wall, d.dmg*0.6);
+          if(Math.hypot(S.pos.x-a.pos.x,S.pos.z-a.pos.z)<9) toast(BEAST[a.type].name+' is tearing at your wall');
+        }
+        a.timer=Math.min(a.timer,0.5);
+      }
+      else if(ok){ a.pos.set(nx,nh,nz); }
+      else { a.timer=0; a.yaw+=2.1; }
+      resolveWalls(a.pos,0.55,a.pos.y);
       a.gait+=dt*spd*1.5;
     }
     a.pos.y=heightAt(a.pos.x,a.pos.z);
@@ -1602,7 +1747,8 @@ function doStrike(){
   if(best){
     best.hp-=t.dmg; best.hurt=2.4; best.state='chase';
     flashHit(best);
-    if(hostId && hostId!==S.pid) queueAHit(best.id,t.dmg);
+    if(hostId && hostId!==S.pid && !rtcSendTo(hostId,{t:'a',a:best.id,d:t.dmg},true))
+      queueAHit(best.id,t.dmg);
     if(best.hp<=0) killAnimal(best);
     return;
   }
@@ -1614,7 +1760,10 @@ function doStrike(){
       if(!insideAnyZone(pr.x,pr.z)) continue;
       const p=new THREE.Vector3(pr.x,pr.y+1.2,pr.z);
       const d=inCone(org,dir,p,reach+0.8,cosLim);
-      if(d>=0){ queueHit(id,t.dmg); toast('Struck '+(pr.name||'castaway')); return; }
+      if(d>=0){
+        if(!rtcSendTo(id,{t:'h',d:t.dmg},true)) queueHit(id,t.dmg);
+        toast('Struck '+(pr.name||'castaway')); return;
+      }
     }
   }
   // 3) resource nodes
@@ -1642,7 +1791,7 @@ function doStrike(){
   if(hit){
     const r=S.builds.get(hit);
     if(r.o===ME()){
-      removePiece(hit); pushFort();
+      removePiece(hit,true); pushFort();
       const cost=P_BY_ID[r.t].cost;
       for(const k in cost) add(k,Math.max(1,Math.floor(cost[k]/2)));
       toast('Salvaged back');
@@ -1682,9 +1831,34 @@ function lootCrate(c){
   toast('Crate cracked — salvage secured');
 }
 
+function doorNear(){
+  let best=null,bd=2.6;
+  S.builds.forEach((r,id)=>{
+    if(r.t!=='dr') return;
+    const t=pieceTransform(r);
+    const d=Math.hypot(t.position.x-S.pos.x, t.position.z-S.pos.z);
+    if(d<bd && Math.abs(S.pos.y-r.y)<L){ bd=d; best=id; }
+  });
+  return best;
+}
+function refreshDoor(id){
+  const r=S.builds.get(id), m=S.buildMeshes.get(id);
+  if(r&&m&&m.userData.pivot) m.userData.targetRot = r.op ? -1.55 : 0;
+}
+function toggleDoor(id){
+  const r=S.builds.get(id); if(!r) return;
+  r.op = r.op ? 0 : 1;
+  refreshDoor(id);
+  toast(r.op?'Door open':'Door barred');
+  if(r.o===ME()) pushFort();
+  rtcSend({t:'f',op:'door',id:id,v:r.op},true);
+}
+
 function doUse(){
   if(S.phase!=='play') return;
   const org=aimOrigin(), dir=aimDir();
+  const dr=doorNear();
+  if(dr){ toggleDoor(dr); return; }
   // harvest a carcass
   for(const a of ANIMALS){
     if(a.alive||a.harvested||a.dead) continue;
@@ -1855,11 +2029,16 @@ function updateHUD(){
   const set=(bar,val,lab)=>{ $(bar).firstElementChild.style.width=clamp(val,0,100)+'%'; $(lab).textContent=Math.round(val); };
   set('b_hp',S.hp,'v_hp'); set('b_food',S.food,'v_food');
   set('b_water',S.water,'v_water'); set('b_stam',S.stam,'v_stam');
-  $('v_peers').textContent = S.peers.size+1;
+  const lk=rtcLinkCount();
+  $('v_peers').textContent = (S.peers.size+1) + (lk?' · P2P '+lk:(S.peers.size?' · relay':''));
   const mins=Math.floor(S.tod*24*60);
   $('v_tod').textContent = String(Math.floor(mins/60)).padStart(2,'0')+':'+String(mins%60).padStart(2,'0');
   $('v_day').textContent = S.day;
 
+  if(!S.buildMode){
+    const dn=doorNear();
+    setPrompt(dn ? (S.builds.get(dn).op ? 'Use — bar the door' : 'Use — open the door') : null);
+  }
   const zn=insideAnyZone(S.pos.x,S.pos.z);
   $('zonewarn').style.display = zn?'block':'none';
   if(zn) $('zonewarn').firstElementChild.textContent=zn.name;
@@ -1928,6 +2107,158 @@ const K = {
   fPre:  ()=> 'sb:'+S.room+':fort:',
   ai:    ()=> 'sb:'+S.room+':ai'
 };
+/* ------------------------------------------------------------------
+   WebRTC fast lane. Upstash is only the introduction service: peers are
+   discovered through presence keys, swap one offer and one answer through
+   KV, then talk directly. Positions and AI go on an unreliable channel
+   (stale frames are worthless), hits and fort edits on a reliable one.
+   No TURN server, so symmetric NATs will fail to connect — the KV lane
+   stays live underneath and the game keeps working, just slower.
+   ------------------------------------------------------------------ */
+const RTC={
+  ok: (typeof RTCPeerConnection!=='undefined'),
+  peers:new Map(),
+  ice:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}],
+  sendAcc:0, aiAcc:0
+};
+function sigKey(a,b,w){ return 'sb:'+S.room+':sig:'+a+'_'+b+'_'+w; }
+function rtcLinked(pid){ const st=RTC.peers.get(pid); return !!(st&&st.s&&st.s.readyState==='open'); }
+function rtcLinkCount(){ let n=0; RTC.peers.forEach((st,pid)=>{ if(rtcLinked(pid)) n++; }); return n; }
+function rtcAllLinked(){ return S.peers.size>0 && rtcLinkCount()>=S.peers.size; }
+function rtcSend(obj,rel){
+  if(!RTC.ok||!RTC.peers.size) return;
+  const m=JSON.stringify(obj);
+  RTC.peers.forEach(st=>{
+    const ch=rel?st.e:st.s;
+    if(ch&&ch.readyState==='open'){ try{ ch.send(m); }catch(e){} }
+  });
+}
+function rtcSendTo(pid,obj,rel){
+  const st=RTC.peers.get(pid); if(!st) return false;
+  const ch=rel?st.e:st.s;
+  if(ch&&ch.readyState==='open'){ try{ ch.send(JSON.stringify(obj)); return true; }catch(e){} }
+  return false;
+}
+function wireChannel(pid,st,ch){
+  ch.onmessage=ev=>{ try{ onRtcMsg(pid,ev.data); }catch(e){} };
+  ch.onopen=()=>{
+    if(st.announced) return;
+    st.announced=true; st.ready=true;
+    const lo=S.pid<pid?S.pid:pid, hi=S.pid<pid?pid:S.pid;
+    Net.del(sigKey(lo,hi,'o')); Net.del(sigKey(lo,hi,'a'));
+    toast('Direct link up — '+(((S.peers.get(pid)||{}).name)||'peer'));
+  };
+  ch.onclose=()=>{ st.ready=false; };
+}
+function iceDone(pc){
+  if(pc.iceGatheringState==='complete') return Promise.resolve();
+  return new Promise(res=>{
+    const to=setTimeout(res,2800);
+    pc.addEventListener('icegatheringstatechange',()=>{
+      if(pc.iceGatheringState==='complete'){ clearTimeout(to); res(); }
+    });
+  });
+}
+function newPC(pid){
+  const pc=new RTCPeerConnection({iceServers:RTC.ice});
+  pc.onconnectionstatechange=()=>{
+    if(pc.connectionState==='failed'||pc.connectionState==='closed') rtcDrop(pid);
+  };
+  return pc;
+}
+async function rtcOffer(pid){
+  const pc=newPC(pid);
+  const st={pc,role:'o',ready:false,t0:now(),answered:false};
+  RTC.peers.set(pid,st);
+  st.s=pc.createDataChannel('s',{ordered:false,maxRetransmits:0});
+  st.e=pc.createDataChannel('e',{ordered:true});
+  wireChannel(pid,st,st.s); wireChannel(pid,st,st.e);
+  await pc.setLocalDescription(await pc.createOffer());
+  await iceDone(pc);
+  await Net.set(sigKey(S.pid,pid,'o'),{sdp:pc.localDescription.sdp,at:now()});
+}
+async function rtcAnswer(pid,offer){
+  const pc=newPC(pid);
+  const st={pc,role:'a',ready:false,t0:now()};
+  RTC.peers.set(pid,st);
+  pc.ondatachannel=ev=>{
+    if(ev.channel.label==='s') st.s=ev.channel; else st.e=ev.channel;
+    wireChannel(pid,st,ev.channel);
+  };
+  await pc.setRemoteDescription({type:'offer',sdp:offer.sdp});
+  await pc.setLocalDescription(await pc.createAnswer());
+  await iceDone(pc);
+  await Net.set(sigKey(pid,S.pid,'a'),{sdp:pc.localDescription.sdp,at:now()});
+}
+function rtcDrop(pid){
+  const st=RTC.peers.get(pid); if(!st) return;
+  try{ st.pc.close(); }catch(e){}
+  RTC.peers.delete(pid);
+}
+async function rtcSignalTick(){
+  if(!RTC.ok || Net.mode==='memory') return;
+  for(const pid of Array.from(S.peers.keys())){
+    const st=RTC.peers.get(pid);
+    const iOffer = S.pid < pid;               // deterministic: lower id offers
+    if(!st){
+      if(iOffer) await rtcOffer(pid);
+      else{
+        const o=await Net.get(sigKey(pid,S.pid,'o'));
+        if(o&&o.sdp&&now()-o.at<90000) await rtcAnswer(pid,o);
+      }
+      continue;
+    }
+    if(!st.ready && iOffer && !st.answered && now()-st.t0>1000){
+      const a=await Net.get(sigKey(S.pid,pid,'a'));
+      if(a&&a.sdp){ st.answered=true; await st.pc.setRemoteDescription({type:'answer',sdp:a.sdp}); }
+    }
+    if(!st.ready && now()-st.t0>18000){      // never connected: bin it and retry clean
+      rtcDrop(pid);
+      const lo=iOffer?S.pid:pid, hi=iOffer?pid:S.pid;
+      await Net.del(sigKey(lo,hi,'o')); await Net.del(sigKey(lo,hi,'a'));
+    }
+  }
+  RTC.peers.forEach((st,pid)=>{ if(!S.peers.has(pid)) rtcDrop(pid); });
+}
+function onRtcMsg(pid,raw){
+  const m=JSON.parse(raw);
+  const pr=S.peers.get(pid);
+  if(m.t==='s'){
+    if(!pr) return;
+    pr.tx=m.x; pr.ty=m.y; pr.tz=m.z; pr.tyaw=m.r;
+    pr.hp=m.h; pr.alive=!!m.al; pr.tool=m.tl;
+    pr.av.visible=!!m.al; pr.rtc=true;
+  }
+  else if(m.t==='h') hurtPlayer(m.d,((pr&&pr.name)||'A castaway')+' cut you down');
+  else if(m.t==='a'){
+    if(hostId===S.pid){
+      const a=ANIMALS.find(x=>x.id===m.a);
+      if(a&&a.alive){ a.hp-=m.d; a.hurt=2; a.state='chase'; if(a.hp<=0) killAnimal(a); }
+    }
+  }
+  else if(m.t==='ai'){ if(hostId!==S.pid) applyRemoteAI(m.l); }
+  else if(m.t==='f'){
+    if(m.op==='add') addPiece(m.r,true);
+    else if(m.op==='del') removePiece(m.id);
+    else if(m.op==='door'){ const r=S.builds.get(m.id); if(r){ r.op=m.v; refreshDoor(m.id); } }
+  }
+}
+function rtcTick(dt){
+  if(!RTC.ok||!RTC.peers.size) return;
+  RTC.sendAcc+=dt; RTC.aiAcc+=dt;
+  if(RTC.sendAcc>0.066){                       // ~15 Hz transforms
+    RTC.sendAcc=0;
+    rtcSend({t:'s',x:+S.pos.x.toFixed(2),y:+S.pos.y.toFixed(2),z:+S.pos.z.toFixed(2),
+      r:+S.yaw.toFixed(2),h:Math.round(S.hp),al:S.phase==='play'?1:0,tl:S.equipped});
+  }
+  if(hostId===S.pid && RTC.aiAcc>0.1){         // ~10 Hz beast state from the host
+    RTC.aiAcc=0;
+    rtcSend({t:'ai',l:ANIMALS.filter(a=>!a.dead).map(a=>({i:a.id,ty:a.type,
+      x:+a.pos.x.toFixed(1),z:+a.pos.z.toFixed(1),y:+a.yaw.toFixed(2),
+      h:Math.round(a.hp),al:a.alive?1:0}))});
+  }
+}
+
 let fortDirty=false, lastFortPush=0;
 const seenHits=new Set();
 S.outHits=[]; S.outAHits=[];
@@ -1955,7 +2286,7 @@ async function fastSync(){
   if(S.phase==='menu') return;
   const rec={pid:S.pid,name:S.name,team:S.team,
     x:+S.pos.x.toFixed(2),y:+S.pos.y.toFixed(2),z:+S.pos.z.toFixed(2),
-    yaw:+S.yaw.toFixed(2),hp:Math.round(S.hp),alive:S.phase==='play',
+    yaw:+S.yaw.toFixed(2),hp:Math.round(S.hp),alive:S.phase==='play',tl:S.equipped,
     t:now(), hits:S.outHits.filter(h=>now()-h.at<9000),
     ahits:S.outAHits.filter(h=>now()-h.at<9000)};
   await Net.set(K.me(),rec);
@@ -1980,7 +2311,11 @@ async function fastSync(){
   hostId=lowest;
   // drop stale peers
   for(const [id,pr] of Array.from(S.peers)){
-    if(!seen.has(id)){ if(pr.av) scene.remove(pr.av); S.peers.delete(id); }
+    if(!seen.has(id)){
+      if(pr.av) scene.remove(pr.av);
+      if(pr.light) scene.remove(pr.light);
+      S.peers.delete(id);
+    }
   }
   // AI authority
   if(hostId===S.pid){
@@ -1998,11 +2333,12 @@ async function fastSync(){
       list:ANIMALS.filter(a=>!a.dead).map(a=>({i:a.id,ty:a.type,
         x:+a.pos.x.toFixed(1),z:+a.pos.z.toFixed(1),y:+a.yaw.toFixed(2),
         h:Math.round(a.hp),al:a.alive?1:0}))});
-  } else {
-    const ai=await Net.get(K.ai());
+  } else if(!rtcLinked(hostId)){
+    const ai=await Net.get(K.ai());          // only when the direct link is down
     if(ai&&ai.list) applyRemoteAI(ai.list);
   }
   if(seenHits.size>400) seenHits.clear();
+  await rtcSignalTick();
 }
 
 function upsertPeer(p){
@@ -2015,8 +2351,11 @@ function upsertPeer(p){
     S.peers.set(p.pid,pr);
     toast((p.name||'Someone')+' is ashore');
   }
-  pr.name=p.name; pr.team=p.team; pr.hp=p.hp;
-  pr.tx=p.x; pr.ty=p.y; pr.tz=p.z; pr.tyaw=p.yaw; pr.alive=p.alive;
+  pr.name=p.name; pr.team=p.team;
+  if(!rtcLinked(p.pid)){                    // direct link wins when it exists
+    pr.hp=p.hp; pr.tool=p.tl;
+    pr.tx=p.x; pr.ty=p.y; pr.tz=p.z; pr.tyaw=p.yaw; pr.alive=p.alive;
+  }
   pr.x=pr.x===undefined?p.x:pr.x; pr.y=pr.y===undefined?p.y:pr.y; pr.z=pr.z===undefined?p.z:pr.z;
   pr.av.visible=!!p.alive;
 }
@@ -2065,7 +2404,7 @@ async function slowSync(){
   if(fortDirty && now()-lastFortPush>1200){
     fortDirty=false; lastFortPush=now();
     const mine=[];
-    S.builds.forEach(r=>{ if(r.o===ME()) mine.push({t:r.t,gx:r.gx,gz:r.gz,lv:r.lv,s:r.s,y:r.y,hp:r.hp}); });
+    S.builds.forEach(r=>{ if(r.o===ME()) mine.push({t:r.t,gx:r.gx,gz:r.gz,lv:r.lv,s:r.s,y:r.y,hp:r.hp,op:r.op||0}); });
     if(mine.length) await Net.set(K.fort(ME()),{o:ME(),ts:now(),derelict:0,pieces:mine});
     else await Net.del(K.fort(ME()));
   }
@@ -2081,7 +2420,8 @@ async function slowSync(){
       const id=pieceId(rec);
       keepIds.add(id);
       if(!S.builds.has(id)) addPiece(rec,true);
-      else { const cur=S.builds.get(id); cur.derelict=!!f.derelict; cur.hp=isMine?cur.hp:p.hp; }
+      else { const cur=S.builds.get(id); cur.derelict=!!f.derelict;
+             if(!isMine){ cur.hp=p.hp; if(cur.op!==p.op){ cur.op=p.op; refreshDoor(id); } } }
     }
     if(f.derelict) tintDerelict(f.o);
   }
@@ -2220,11 +2560,32 @@ function frame(time){
       S.buildMeshes.forEach(m=>{
         if(m.userData.flame){ const k=0.85+Math.sin(t*13+m.position.x)*0.15;
           m.userData.flame.scale.set(k,1+Math.sin(t*9)*0.12,k); }
+        if(m.userData.pivot){
+          const pv=m.userData.pivot, tgt=m.userData.targetRot||0;
+          pv.rotation.y += (tgt-pv.rotation.y)*clamp(dt*9,0,1);
+        }
+      });
+      // held torches
+      if(selfAvatar){
+        setAvatarTool(selfAvatar,S.equipped);
+        flickerTool(selfAvatar,t,0);
+        torchLight(S,S.equipped==='torch'&&S.phase==='play',
+                   S.pos.x,S.pos.y+1.45,S.pos.z,t);
+      }
+      let i=1;
+      S.peers.forEach(pr=>{
+        if(pr.tool!==undefined) setAvatarTool(pr.av,pr.tool);
+        flickerTool(pr.av,t,i*1.7);
+        torchLight(pr,pr.tool==='torch'&&pr.alive,pr.x,pr.y+1.45,pr.z,t);
+        i++;
       });
     });
 
+    safe('rtc',()=>rtcTick(dt));
+
     fastAcc+=dt*1000; slowAcc+=dt*1000;
-    if(fastAcc>CFG.POLL_FAST && !fastBusy){ fastAcc=0; fastBusy=true;
+    const fastEvery = rtcAllLinked() ? 2600 : CFG.POLL_FAST;   // KV drops to presence duty
+    if(fastAcc>fastEvery && !fastBusy){ fastAcc=0; fastBusy=true;
       fastSync().catch(e=>showErr('[fastSync] '+e.message)).then(()=>{fastBusy=false;}); }
     if(slowAcc>CFG.POLL_SLOW && !slowBusy){ slowAcc=0; slowBusy=true;
       slowSync().catch(e=>showErr('[slowSync] '+e.message)).then(()=>{slowBusy=false;}); }
@@ -2319,8 +2680,16 @@ function boot(){
     toast('A new castaway. The isle does not remember you.');
   });
 
+  $('netbadge').addEventListener('click',()=>{
+    showErr('STORAGE — '+Net.label()+'\n\n'+Net.diag+
+      '\n\nChecklist:\n'+
+      '1. api/kv.js must be at api/kv.js in the repo root (not beside index.html in a subfolder).\n'+
+      '2. Create the Upstash store, then REDEPLOY — Vercel only injects env vars into builds made after you add them.\n'+
+      '3. Open /api/kv?op=ping in a browser tab. It lists every env var name it can actually see.');
+  });
   Net.detect().then(()=>{
-    $('netbadge').textContent='STORAGE — '+Net.label();
+    $('netbadge').textContent='STORAGE — '+Net.label()+'   ⓘ tap for detail';
+    if(Net.mode!=='upstash') $('netbadge').style.color='#c1502e';
   });
 }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot);
