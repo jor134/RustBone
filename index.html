@@ -245,6 +245,14 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
   <h2 class="dsp">Craft</h2><div class="sub">Salvage into something that keeps you breathing.</div>
   <div class="rows" id="craftrows"></div>
 </div>
+<div class="panel" id="p_chest">
+  <button class="close" id="x_chest">CLOSE</button>
+  <h2 class="dsp">Chest</h2><div class="sub" id="chestsub">Stored here it survives your death. Tap to move a stack.</div>
+  <div class="lbl" style="margin:2px 0 6px">In the chest — tap to take</div>
+  <div class="grid" id="chestgrid"></div>
+  <div class="lbl" style="margin:14px 0 6px">In your pack — tap to store</div>
+  <div class="grid" id="packgrid2"></div>
+</div>
 <div class="panel" id="p_pack">
   <button class="close" id="x_pack">CLOSE</button>
   <h2 class="dsp">Pack</h2><div class="sub" id="packsub">What you're carrying.</div>
@@ -879,9 +887,10 @@ const PIECES = [
   {id:'f',  name:'Floor',    cost:{wood:6},           hp:180},
   {id:'w',  name:'Wall',     cost:{wood:4},           hp:140},
   {id:'d',  name:'Doorway',  cost:{wood:5},           hp:130},
-  {id:'dr', name:'Door',     cost:{wood:6,fiber:4},   hp:155},
+  {id:'dr', name:'Door',     cost:{wood:8,fiber:6},   hp:500},
   {id:'r',  name:'Roof',     cost:{wood:5,fiber:2},   hp:120},
   {id:'p',  name:'Pillar',   cost:{wood:3},           hp:160},
+  {id:'st', name:'Stairs',   cost:{wood:10,fiber:2},  hp:170},
   {id:'box',name:'Chest',    cost:{wood:8,fiber:4},   hp:90},
   {id:'fi', name:'Firepit',  cost:{wood:8,stone:6},   hp:70}
 ];
@@ -1015,6 +1024,9 @@ function initBuildGeo(){
   BGEO.fi = Cyl(0.95,1.15,0.4,8);
 }
 const WOOD_A=0x8a6540, WOOD_B=0x6f5033;
+// local +X is the direction of ascent; rotate it onto the chosen side
+const STAIR_ROT=[0,-Math.PI/2,Math.PI,Math.PI/2];
+const STAIR_STEPS=6;
 
 function sideOffset(s){
   return s===0?[C/2,0]: s===1?[0,C/2]: s===2?[-C/2,0]: [0,-C/2];
@@ -1025,6 +1037,7 @@ function pieceTransform(rec){
   if(rec.t==='f'){ o.position.set(cx,y-0.18,cz); }
   else if(rec.t==='r'){ o.position.set(cx,y+L+0.15,cz); }
   else if(rec.t==='p'){ o.position.set(cx+(rec.s===0||rec.s===3?C/2:-C/2), y+L/2, cz+(rec.s<2?C/2:-C/2)); }
+  else if(rec.t==='st'){ o.position.set(cx,y,cz); o.rotation.y=STAIR_ROT[rec.s||0]; }
   else if(rec.t==='box'){ o.position.set(cx,y+0.5,cz); o.rotation.y=(rec.s||0)*Math.PI/2; }
   else if(rec.t==='fi'){ o.position.set(cx,y+0.2,cz); }
   else { const off=sideOffset(rec.s); o.position.set(cx+off[0], y+L/2, cz+off[1]);
@@ -1069,6 +1082,18 @@ function buildPieceMesh(rec,ghost){
     handle.position.set(1.52,-0.1,0.14); pivot.add(handle);
     pivot.rotation.y = rec.op?-1.55:0;
     g.userData.pivot=pivot; g.userData.targetRot=rec.op?-1.55:0;
+  }
+  else if(rec.t==='st'){
+    for(let i=0;i<STAIR_STEPS;i++){
+      const h=(i+1)*(L/STAIR_STEPS);
+      const st=mk(new THREE.BoxGeometry(C/STAIR_STEPS,h,C-0.5),i%2?WOOD_A:0x7a5a3a);
+      st.position.set(-C/2+(i+0.5)*(C/STAIR_STEPS), h/2, 0);
+      g.add(st);
+    }
+    if(!ghost) for(let i=-1;i<=1;i+=2){
+      const rail=mk(new THREE.BoxGeometry(C-0.1,0.12,0.12),WOOD_B);
+      rail.position.set(0,L*0.72,i*(C-0.5)/2); rail.rotation.z=Math.atan2(L,C)*0.92; g.add(rail);
+    }
   }
   else if(rec.t==='r'){ g.add(mk(BGEO.r,0x7a5a3a)); }
   else if(rec.t==='p'){ g.add(mk(BGEO.p,WOOD_B)); }
@@ -1190,7 +1215,11 @@ function ghostRecord(){
       let sup=false;
       for(let sd=0;sd<4;sd++)
         if(wallOnSide(gx,gz,lv-1,sd)||findPiece('p',gx,gz,lv-1,sd)) sup=true;
-      if(!sup){ why='Needs walls below to carry it'; continue; }
+      if(!sup) for(const n of [[1,0],[-1,0],[0,1],[0,-1]])
+        if(foundationAt(gx+n[0],gz+n[1],lv)) sup=true;        // extend an upper deck sideways
+      if(!sup) for(const n of [[1,0,2],[-1,0,0],[0,1,3],[0,-1,1]])
+        if(findPiece('st',gx+n[0],gz+n[1],lv-1,n[2])) sup=true; // head of a flight
+      if(!sup){ why='Needs walls, stairs or a neighbouring deck'; continue; }
       rec.gx=gx; rec.gz=gz; rec.lv=lv; rec.y=st.base+lv*L;
       return {rec:rec,why:null};
     }
@@ -1209,12 +1238,18 @@ function ghostRecord(){
 
     rec.gx=gx; rec.gz=gz; rec.lv=lv; rec.y=f.y;
 
-    if(p.id==='w'||p.id==='d'||p.id==='dr'){
+    if(p.id==='w'||p.id==='d'||p.id==='dr'||p.id==='st'){
       const dx=aimPt.x-cx, dz=aimPt.z-cz;
       const auto = Math.abs(dx)>Math.abs(dz) ? (dx>0?0:2) : (dz>0?1:3);
       rec.s=(auto+S.pieceRot)&3;            // Turn overrides the auto side
-      if(wallOnSide(gx,gz,lv,rec.s)){ why='That side is already filled'; continue; }
-      if(p.id==='dr') rec.op=0;
+      if(p.id==='st'){
+        let taken=false;
+        for(let sd=0;sd<4;sd++) if(findPiece('st',gx,gz,lv,sd)) taken=true;
+        if(taken){ why='Stairs already in this bay'; continue; }
+      }else{
+        if(wallOnSide(gx,gz,lv,rec.s)){ why='That side is already filled'; continue; }
+        if(p.id==='dr') rec.op=0;
+      }
     }
     else if(p.id==='p'){
       const dx=aimPt.x-cx, dz=aimPt.z-cz;
@@ -1266,10 +1301,15 @@ function surfaceY(x,z,feetY){
   let best=heightAt(x,z);
   const step=(feetY===undefined)?1e9:feetY+0.7;
   S.builds.forEach(r=>{
-    if(r.t!=='f'&&r.t!=='r') return;
+    if(r.t!=='f'&&r.t!=='r'&&r.t!=='st') return;
     const cx=r.gx*C, cz=r.gz*C;
     if(Math.abs(x-cx)>C/2||Math.abs(z-cz)>C/2) return;
-    const top = r.t==='f' ? r.y : r.y+L+0.3;
+    let top;
+    if(r.t==='st'){
+      const sd=r.s||0;
+      const along = sd===0 ? x-cx : sd===1 ? z-cz : sd===2 ? -(x-cx) : -(z-cz);
+      top = r.y + L*clamp((along+C/2)/C,0,1);
+    } else top = r.t==='f' ? r.y : r.y+L+0.3;
     if(top>best && top<=step) best=top;
   });
   return best;
@@ -1341,6 +1381,65 @@ function damagePiece(id,dmg){
   const r=S.builds.get(id); if(!r) return;
   r.hp-=dmg;
   if(r.hp<=0){ removePiece(id,true); toast('Structure broken'); pushFort(); }
+}
+
+/* ============================================================
+   CHEST VAULT
+   Keyed to a persistent character id, not the run id, so it survives death.
+   It is NOT safe: while you are dead the vault is flagged derelict for the
+   same five minutes as the fort, and anyone who breaks your door can empty it.
+   ============================================================ */
+function charIdentity(){
+  let c=LS.get('sb_char_'+S.room);
+  if(!c){ c=Math.random().toString(36).slice(2,10); LS.set('sb_char_'+S.room,c); }
+  S.charKey=c;
+}
+async function loadVault(){
+  try{
+    const v=await Net.get(K.vault());
+    S.vault=(v&&v.items)||{};
+    S.vaultDer=(v&&v.derelict)||0;
+    if(S.vaultDer && now()-S.vaultDer>CFG.DERELICT_MS){ S.vaultDer=0; saveVault(); }
+  }catch(e){ S.vault=S.vault||{}; S.vaultDer=0; }
+}
+function saveVault(){
+  Net.set(K.vault(),{o:S.charKey,name:S.name,items:S.vault,derelict:S.vaultDer,at:now()});
+}
+function vaultCount(){ let n=0; for(const k in S.vault) n+=S.vault[k]; return n; }
+function depositAll(k){
+  const n=have(k); if(n<=0) return;
+  S.inv[k]-=n; S.vault[k]=(S.vault[k]||0)+n;
+  saveVault(); refreshHotbar();
+}
+function withdrawAll(k){
+  const n=S.vault[k]||0; if(n<=0) return;
+  delete S.vault[k]; add(k,n); saveVault();
+}
+function openChest(){
+  if(S.vaultDer && now()-S.vaultDer>CFG.DERELICT_MS){ S.vaultDer=0; saveVault(); }
+  togglePanel('p_chest');
+}
+async function raidVault(charKey){
+  try{
+    const v=await Net.get(K.vault(charKey));
+    if(!v||!v.items||!Object.keys(v.items).length){ toast('The chest is bare'); return; }
+    const parts=[];
+    for(const k in v.items){
+      add(k,v.items[k]);
+      parts.push(v.items[k]+'× '+((ITEMS[k]||TOOLS[k]||{n:k}).n));
+    }
+    await Net.set(K.vault(charKey),{o:charKey,items:{},derelict:v.derelict,at:now()});
+    toast('Stripped their chest: '+parts.join(', '));
+  }catch(e){ toast('Could not reach that chest'); }
+}
+function chestNear(){
+  let best=null,bd=3.0;
+  S.builds.forEach(r=>{
+    if(r.t!=='box') return;
+    const d=Math.hypot(r.gx*C-S.pos.x, r.gz*C-S.pos.z);
+    if(d<bd && Math.abs(S.pos.y-r.y)<L){ bd=d; best=r; }
+  });
+  return best;
 }
 
 /* ============================================================
@@ -1766,6 +1865,7 @@ function setupInput(){
   $('s_view').addEventListener('click',cycleCam);
   $('x_craft').addEventListener('click',()=>closePanels());
   $('x_pack').addEventListener('click',()=>closePanels());
+  $('x_chest').addEventListener('click',()=>closePanels());
 }
 function pollPad(){
   if(!navigator.getGamepads) return;
@@ -1970,9 +2070,15 @@ function doStrike(){
       for(const k in cost) add(k,Math.max(1,Math.floor(cost[k]/2)));
       toast('Salvaged back');
     } else if(r.derelict){
-      damagePiece(hit,t.dmg*1.5);
+      if(r.t==='dr'){
+        damagePiece(hit,t.dmg);
+        const left=S.builds.get(hit);
+        if(left) toast('Door '+Math.max(0,Math.round(left.hp))+'/'+P_BY_ID.dr.hp);
+      } else {
+        toast('The frame holds. The door is the way in.');
+      }
     } else {
-      toast("That fort still has an owner");
+      toast('That fort still has an owner');
     }
   }
 }
@@ -2021,6 +2127,10 @@ function refreshDoor(id){
 }
 function toggleDoor(id){
   const r=S.builds.get(id); if(!r) return;
+  if(r.o!==ME()){
+    toast(r.derelict?'Barred. You will have to break it.':'Barred from the inside.');
+    return;
+  }
   r.op = r.op ? 0 : 1;
   refreshDoor(id);
   toast(r.op?'Door open':'Door barred');
@@ -2033,6 +2143,13 @@ function doUse(){
   const org=aimOrigin(), dir=aimDir();
   const cache=nearestDrop();
   if(cache){ lootDrop(cache); return; }
+  const ch=chestNear();
+  if(ch){
+    if(ch.o===ME()) openChest();
+    else if(ch.derelict && ch.char) raidVault(ch.char);
+    else toast('Locked — the owner still draws breath');
+    return;
+  }
   const dr=doorNear();
   if(dr){ toggleDoor(dr); return; }
   // harvest a carcass
@@ -2118,7 +2235,7 @@ function refreshHotbar(){
     el.style.opacity = owned?1:0.32;
     el.classList.toggle('on', S.hotIdx===i);
   });
-  renderCraft(); renderPack(); renderBuildBar();
+  renderCraft(); renderPack(); renderChest(); renderBuildBar();
 }
 function selectHot(i){
   const id=HOT[i]; if(!id) return;
@@ -2150,6 +2267,30 @@ function renderCraft(){
     });
     row.appendChild(b); box.appendChild(row);
   }
+}
+function renderChest(){
+  const cg=$('chestgrid'), pg=$('packgrid2');
+  if(!cg||!pg) return;
+  const fill=(el,src,fn,empty)=>{
+    el.innerHTML=''; let any=false;
+    for(const k in src){
+      const n=src[k]; if(!n||n<=0) continue; any=true;
+      const meta=ITEMS[k]||TOOLS[k]||{n:k,ic:'🩹'};
+      const d=document.createElement('div'); d.className='cell';
+      d.innerHTML='<div class="ic">'+meta.ic+'</div><div class="nm">'+meta.n+
+                  '</div><div class="ct">'+n+'</div>';
+      d.addEventListener('click',()=>{ fn(k); renderChest(); });
+      el.appendChild(d);
+    }
+    if(!any) el.innerHTML='<div class="cell" style="grid-column:1/-1;text-align:left">'+
+      '<div class="nm">'+empty+'</div></div>';
+  };
+  fill(cg,S.vault,withdrawAll,'Nothing stored');
+  fill(pg,S.inv,depositAll,'Your pack is empty');
+  const sub=$('chestsub');
+  if(sub) sub.textContent = S.vaultDer
+    ? 'Flagged derelict — a raider who breaks your door can empty this right now.'
+    : 'Stored here it survives your death. Tap to move a stack.';
 }
 function renderPack(){
   const g=$('packgrid'); if(!g) return;
@@ -2194,7 +2335,7 @@ function togglePanel(id){
   const el=$(id), open=el.style.display==='block';
   closePanels(); if(!open){ el.style.display='block'; refreshHotbar(); }
 }
-function closePanels(){ $('p_craft').style.display='none'; $('p_pack').style.display='none'; }
+function closePanels(){ $('p_craft').style.display='none'; $('p_pack').style.display='none'; $('p_chest').style.display='none'; }
 function cycleCam(){ S.camMode = S.camMode===3?1:3; }
 function setPrompt(txt){
   const p=$('prompt');
@@ -2218,10 +2359,14 @@ function updateHUD(){
 
   if(!S.buildMode){
     const cd=nearestDrop();
+    const cn=cd?null:chestNear();
     if(cd) setPrompt('Use — take the cache ('+itemsCount(cd.items)+' items)');
+    else if(cn) setPrompt(cn.o===ME() ? ('Use — chest ('+vaultCount()+' stored)')
+                        : (cn.derelict?'Use — strip this chest':'Locked chest'));
     else{
       const dn=doorNear();
-      setPrompt(dn ? (S.builds.get(dn).op ? 'Use — bar the door' : 'Use — open the door') : null);
+      setPrompt(dn ? (dn && S.builds.get(dn).o!==ME() ? 'Barred from the inside'
+                     : (S.builds.get(dn).op ? 'Use — bar the door' : 'Use — open the door')) : null);
     }
   }
   const zn=insideAnyZone(S.pos.x,S.pos.z);
@@ -2262,6 +2407,7 @@ function die(why){
     LS.set('sb_best',JSON.stringify({ms:ms,kills:S.kills,built:S.built,day:S.day}));
   }
   markFortDerelict();
+  S.vaultDer=now(); saveVault();
   dropCache().then(rec=>{
     $('d_fort').textContent = (rec
       ? 'Everything you carried is in a marked chest where you fell. Anyone can take it. '
@@ -2294,6 +2440,7 @@ const K = {
   me:    ()=> 'sb:'+S.room+':p:'+S.pid,
   pPre:  ()=> 'sb:'+S.room+':p:',
   fort:  (o)=> 'sb:'+S.room+':fort:'+o,
+  vault: (c)=> 'sb:'+S.room+':vault:'+(c||S.charKey),
   fPre:  ()=> 'sb:'+S.room+':fort:',
   ai:    ()=> 'sb:'+S.room+':ai'
 };
@@ -2599,7 +2746,7 @@ async function slowSync(){
     fortDirty=false; lastFortPush=now();
     const mine=[];
     S.builds.forEach(r=>{ if(r.o===ME()) mine.push({t:r.t,gx:r.gx,gz:r.gz,lv:r.lv,s:r.s,y:r.y,hp:r.hp,op:r.op||0}); });
-    if(mine.length) await Net.set(K.fort(ME()),{o:ME(),ts:now(),derelict:0,pieces:mine});
+    if(mine.length) await Net.set(K.fort(ME()),{o:ME(),char:S.charKey,ts:now(),derelict:0,pieces:mine});
     else await Net.del(K.fort(ME()));
   }
   // pull caches
@@ -2622,7 +2769,7 @@ async function slowSync(){
     if(f.derelict && now()-f.derelict>CFG.DERELICT_MS){ await Net.del(it.key); continue; }
     const isMine = f.o===ME();
     for(const p of f.pieces){
-      const rec=Object.assign({},p,{o:f.o,derelict:!!f.derelict});
+      const rec=Object.assign({},p,{o:f.o,char:f.char,derelict:!!f.derelict});
       const id=pieceId(rec);
       keepIds.add(id);
       if(!S.builds.has(id)) addPiece(rec,true);
@@ -2654,7 +2801,7 @@ async function markFortDerelict(){
   let mateAlive=false;
   if(S.team) for(const [,pr] of S.peers) if(pr.team===S.team&&pr.alive) mateAlive=true;
   if(mateAlive){ toast('Your crewmate still holds the fort.'); return; }
-  if(mine.length) await Net.set(K.fort(ME()),{o:ME(),ts:now(),derelict:now(),pieces:mine});
+  if(mine.length) await Net.set(K.fort(ME()),{o:ME(),char:S.charKey,ts:now(),derelict:now(),pieces:mine});
   else await Net.del(K.fort(ME()));
 }
 
@@ -2819,9 +2966,11 @@ async function startRun(){
   S.room=($('i_room').value||'REEF01').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6)||'REEF01';
   S.team=($('i_team').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6);
   newRunIdentity();
+  charIdentity();
   $('v_room').textContent=S.room;
 
   await joinWorld();
+  await loadVault();
 
   if(!worldBuilt){
     buildHeightmap(S.seed);
