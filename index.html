@@ -1388,13 +1388,13 @@ function nearestDrop(){
 // A predator that never tires is not a chase, it is a countdown.
 const BEAST = {
   boar:   {hp:95, spd:5.4,  dmg:18, reach:2.3, det:15, agg:false, cd:1.5,
-           burstT:5.0, restT:4.5, restMul:0.55,
+           burstT:5.0, restT:4.5, restMul:0.55, leash:55, patience:9,
            drop:{meat:3,hide:2}, name:'Boar'},
   stalker:{hp:72, spd:6.7,  dmg:24, reach:2.7, det:26, agg:true,  cd:1.1,
-           burstT:4.2, restT:5.0, restMul:0.52,
+           burstT:4.2, restT:5.0, restMul:0.52, leash:80, patience:14,
            drop:{meat:2,hide:1,flint:1}, name:'Isle stalker'},
   crab:   {hp:34, spd:3.2,  dmg:9,  reach:1.8, det:7,  agg:false, cd:1.8,
-           burstT:3, restT:3, restMul:0.7,
+           burstT:3, restT:3, restMul:0.7, leash:22, patience:5,
            drop:{meat:1,fiber:1}, name:'Reef crab'}
 };
 const ANIMALS=[];
@@ -1464,6 +1464,7 @@ function spawnAnimal(type,x,z){
     pos:new THREE.Vector3(x,heightAt(x,z),z), yaw:Math.random()*6.28,
     hp:d.hp, maxhp:d.hp, state:'idle', tx:x, tz:z, timer:0, cd:0,
     wind:1, tired:0, blown:false,
+    home:{x:x,z:z}, chaseT:0, calm:0, losT:0, waterT:0,
     alive:true, deadAt:0, harvested:false, gait:0, hurt:0};
   ANIMALS.push(a); return a;
 }
@@ -1507,11 +1508,34 @@ function updateAnimals(dt){
 
     const toP=new THREE.Vector3(S.pos.x-a.pos.x,0,S.pos.z-a.pos.z);
     const dist=toP.length();
-    const det = d.det*(isNight()&&a.type==='stalker'?1.5:1);
-    const provoked = a.state==='chase'||a.hurt>0;
+    a.calm=Math.max(0,a.calm-dt);
+    // after breaking off it hunts less keenly for a while, so you don't get
+    // re-acquired the instant you stop running
+    const det = d.det*(isNight()&&a.type==='stalker'?1.5:1)*(a.calm>0?0.45:1);
+    const homeD = Math.hypot(a.pos.x-a.home.x, a.pos.z-a.home.z);
 
-    if(S.phase==='play' && dist<det && (d.agg||provoked)) a.state='chase';
-    else if(a.state==='chase' && dist>det*1.6) a.state='idle';
+    if(a.state==='chase'){
+      a.chaseT+=dt;
+      if(wallBetween(a.pos.x,a.pos.z,a.pos.y,S.pos.x,S.pos.z)) a.losT+=dt; else a.losT=0;
+      if(S.pos.y<0.45) a.waterT+=dt; else a.waterT=0;   // you waded out
+
+      let quit=null;
+      if(S.phase!=='play')                 quit='loses interest';
+      else if(dist > det*1.25)             quit='loses you';
+      else if(homeD > (d.leash||60))       quit='turns back for its ground';
+      else if(a.chaseT > (d.patience||10)) quit='breaks off';
+      else if(a.losT > 2.5)                quit='loses your scent';
+      else if(a.waterT > 2.5)              quit='will not follow into the surf';
+      if(quit){
+        a.state='return'; a.chaseT=0; a.losT=0; a.waterT=0;
+        a.calm=10; a.hurt=0;
+        if(dist<50) toast(d.name+' '+quit);
+      }
+    }
+    else if(a.state!=='flee' && S.phase==='play' && dist<det &&
+            ((d.agg && a.calm<=0) || a.hurt>0)){
+      a.state='chase'; a.chaseT=0; a.losT=0; a.waterT=0;
+    }
 
     if(a.type==='crab' && S.phase==='play' && dist<d.det && a.hurt<=0) a.state='flee';
 
@@ -1541,6 +1565,10 @@ function updateAnimals(dt){
         a.cd=d.cd;
         hurtPlayer(d.dmg, d.name+' hits you');
       }
+    } else if(a.state==='return'){
+      const dx=a.home.x-a.pos.x, dz=a.home.z-a.pos.z, dd=Math.hypot(dx,dz);
+      if(dd>5){ a.yaw=Math.atan2(dx,dz); spd=d.spd*0.42; }
+      else { a.state='idle'; a.timer=0; }
     } else if(a.state==='flee'){
       const dir=toP.negate().normalize();
       a.yaw=Math.atan2(dir.x,dir.z); spd=d.spd*0.9*mul;
