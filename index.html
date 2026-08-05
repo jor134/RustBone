@@ -74,6 +74,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 #b_food i{background:linear-gradient(90deg,#7c5a1e,#c9a670)}
 #b_water i{background:linear-gradient(90deg,#1e5a6b,#57b3c9)}
 #b_stam i{background:linear-gradient(90deg,#3d6640,#7bbd80)}
+#b_warm i{background:linear-gradient(90deg,#5a2a10,#e8a04a)}
 
 #topright{position:absolute;right:10px;top:calc(env(safe-area-inset-top) + 8px);text-align:right}
 #topright div{font-size:10px;letter-spacing:.12em;color:#8d9aa1;margin-bottom:3px}
@@ -177,6 +178,11 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 .cell .ic{font-size:19px}
 .cell .nm{font-size:9px;color:#8d9aa1;text-transform:uppercase;letter-spacing:.06em;margin-top:3px}
 .cell .ct{font-size:13px;color:var(--sand);margin-top:1px}
+.tapcell{position:relative;cursor:pointer}
+.tapcell:active{border-color:var(--rust)}
+.allchip{position:absolute;right:2px;top:2px;font-size:7px;letter-spacing:.08em;
+  padding:2px 4px;background:#2a3d45;color:#a9b4b9;border-radius:2px;border:1px solid #3a5058}
+.allchip:active{background:var(--rust);color:#130b07}
 
 /* death */
 #death{position:fixed;inset:0;z-index:70;display:none;flex-direction:column;
@@ -222,6 +228,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <div class="gauge"><div class="gl"><span>Fed</span><span id="v_food">100</span></div><div class="bar" id="b_food"><i></i></div></div>
     <div class="gauge"><div class="gl"><span>Water</span><span id="v_water">100</span></div><div class="bar" id="b_water"><i></i></div></div>
     <div class="gauge"><div class="gl"><span>Wind</span><span id="v_stam">100</span></div><div class="bar" id="b_stam"><i></i></div></div>
+    <div class="gauge"><div class="gl"><span>Warmth</span><span id="v_warm">100</span></div><div class="bar" id="b_warm"><i></i></div></div>
   </div>
   <div id="compass"><div id="comptrack"></div></div>
   <div id="topright">
@@ -260,7 +267,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 </div>
 <div class="panel" id="p_chest">
   <button class="close" id="x_chest">CLOSE</button>
-  <h2 class="dsp">Chest</h2><div class="sub" id="chestsub">Stored here it survives your death. Tap to move a stack.</div>
+  <h2 class="dsp">Chest</h2><div class="sub" id="chestsub">Stored here it survives your death. Tap moves one — ALL moves the stack.</div>
   <div class="lbl" style="margin:2px 0 6px">In the chest — tap to take</div>
   <div class="grid" id="chestgrid"></div>
   <div class="lbl" style="margin:14px 0 6px">In your pack — tap to store</div>
@@ -632,8 +639,9 @@ function vmSetTool(id){
   if(vmTool){ vmHand.remove(vmTool); vmTool=null; }
   const m=toolModel(id);
   if(m){
-    m.scale.setScalar(0.62);
-    m.rotation.set(-0.62,0.12,-0.16);
+    m.scale.setScalar(id==='bow'?0.72:0.62);
+    const r=m.userData.restV||[-0.62,0.12,-0.16];
+    m.rotation.set(r[0],r[1],r[2]);
     vmHand.add(m); vmTool=m;
   }
 }
@@ -660,6 +668,7 @@ function updateViewModel(dt,speed){
   }
   vmArmL.rotation.x = 0.34 - Math.sin(vmWalk)*0.06;
   vmArmL.visible = !S.buildMode;
+  if(vmTool&&vmTool.userData.nock) vmTool.userData.nock.visible=have('arrow')>0;
   if(vmTool&&vmTool.userData.flame){
     const k=0.86+Math.sin(S.t*16)*0.12;
     vmTool.userData.flame.scale.set(k,1+Math.sin(S.t*11)*0.2,k);
@@ -1074,7 +1083,7 @@ const S = {
   t:0, dt:0, tod:0.27, day:1, runStart:0,
   pos:new THREE.Vector3(), vel:new THREE.Vector3(),
   yaw:0, pitch:-0.12, onGround:true, camMode:3, vr:false,
-  hp:100, food:100, water:100, stam:100, temp:100,
+  hp:100, food:100, water:100, stam:100, chill:0, chillWarned:false,
   inv:{}, hotIdx:0, equipped:'hands',
   charKey:'', vault:{}, vaultDer:0, vaultLoaded:false, fortLoaded:false, broken:new Set(),
   dur:{},
@@ -1334,6 +1343,50 @@ function toolModel(id){
     const tip=new THREE.Mesh(Cone(0.07,0.38,5),toon(0xe0d7c2));
     tip.position.y=1.65; addOutline(tip,1.09); g.add(tip);
     const bind=new THREE.Mesh(Cyl(0.05,0.05,0.13,6),toon(0x53412c)); bind.position.y=1.44; g.add(bind);
+  }else if(id==='bow'){
+    const wood=toon(0x7a5a38), horn=toon(0x4a3a26), cord=toon(0xd8cdb4);
+    const riser=new THREE.Mesh(new THREE.BoxGeometry(0.07,0.3,0.05),horn);
+    addOutline(riser,1.1); g.add(riser);
+    const grip=new THREE.Mesh(Cyl(0.036,0.036,0.15,7),toon(0x53412c));
+    grip.position.z=0.012; g.add(grip);
+    const shelf=new THREE.Mesh(new THREE.BoxGeometry(0.09,0.022,0.05),horn);
+    shelf.position.set(0.03,0.09,0); g.add(shelf);
+
+    // each limb is a chain of shortening segments, each rotated a little more,
+    // so the bow reads as recurved instead of a straight stick
+    for(let sdir=-1;sdir<=1;sdir+=2){
+      let cur=new THREE.Group(); cur.position.y=sdir*0.15; g.add(cur);
+      for(let i=0;i<3;i++){
+        const len=0.30-i*0.055;
+        const node=new THREE.Group();
+        node.rotation.x = sdir*(i===0?0.16:0.34);
+        cur.add(node);
+        const seg=new THREE.Mesh(Cyl(0.027-i*0.006,0.022-i*0.006,len,6),wood);
+        seg.position.y=sdir*len/2;
+        if(i<2) addOutline(seg,1.13);
+        node.add(seg);
+        const nxt=new THREE.Group(); nxt.position.y=sdir*len; node.add(nxt);
+        cur=nxt;
+      }
+      const nock=new THREE.Mesh(Cyl(0.02,0.014,0.05,5),horn);
+      cur.add(nock);
+    }
+    const string=new THREE.Mesh(Cyl(0.006,0.006,1.42,4),cord);
+    string.position.z=-0.145; g.add(string);
+
+    // the nocked arrow only shows when you actually have ammunition
+    const nk=new THREE.Group(); nk.position.set(0,0.02,-0.13); g.add(nk);
+    const ash=new THREE.Mesh(Cyl(0.012,0.012,0.62,4),toon(0xb59a6c));
+    ash.rotation.x=Math.PI/2; nk.add(ash);
+    const atip=new THREE.Mesh(Cone(0.026,0.09,4),toon(0xdcd5c2));
+    atip.rotation.x=-Math.PI/2; atip.position.z=-0.35; nk.add(atip);
+    const afl=new THREE.Mesh(new THREE.PlaneGeometry(0.07,0.12),
+      new THREE.MeshBasicMaterial({color:0xc1502e,side:THREE.DoubleSide}));
+    afl.position.z=0.26; nk.add(afl);
+    g.userData.nock=nk;
+
+    g.userData.restA=[-0.18,0,-0.22];   // held nearly upright in a hanging hand
+    g.userData.restV=[-0.10,0.62,-0.12];// canted across the screen in first person
   }else if(id==='torch'){
     const h=shaft(0.74,0.04,0x6b5236); h.position.y=0.3; g.add(h);
     const wrap=new THREE.Mesh(Cyl(0.095,0.07,0.22,6),toon(0x4a3a26));
@@ -1355,9 +1408,14 @@ function setAvatarTool(av,id){
   const m=toolModel(id);
   if(m){
     // the arm hangs down, so cant the tool forward and up out of the fist
-    m.rotation.set(-1.05,0,-0.12);
+    const r=m.userData.restA||[-1.05,0,-0.12];
+    m.rotation.set(r[0],r[1],r[2]);
     u.hand.add(m); u.tool=m;
   }
+}
+function setNock(av,ammo){
+  const t=av.userData.tool;
+  if(t && t.userData.nock) t.userData.nock.visible = ammo>0;
 }
 // The torch light lives in the scene, not on the avatar: three skips lights
 // parented to an invisible object, so a child light would die in first person.
@@ -1944,14 +2002,19 @@ function saveVault(keepalive){
   Net.set(K.vault(),{o:S.charKey,name:S.name,items:S.vault,dur:S.dur,derelict:S.vaultDer,at:now()},keepalive);
 }
 function vaultCount(){ let n=0; for(const k in S.vault) n+=S.vault[k]; return n; }
-function depositAll(k){
-  const n=have(k); if(n<=0) return;
+function deposit(k,n){
+  const avail=have(k); if(avail<=0) return;
+  n=Math.min(n===undefined?1:n, avail);
   S.inv[k]-=n; S.vault[k]=(S.vault[k]||0)+n;
+  if(S.inv[k]<=0) delete S.inv[k];
   saveVault(); refreshHotbar();
 }
-function withdrawAll(k){
-  const n=S.vault[k]||0; if(n<=0) return;
-  delete S.vault[k]; add(k,n); saveVault();
+function withdraw(k,n){
+  const avail=S.vault[k]||0; if(avail<=0) return;
+  n=Math.min(n===undefined?1:n, avail);
+  S.vault[k]=avail-n;
+  if(S.vault[k]<=0) delete S.vault[k];
+  add(k,n); saveVault();
 }
 function openChest(){
   if(S.vaultDer && now()-S.vaultDer>CFG.DERELICT_MS){ S.vaultDer=0; saveVault(); }
@@ -2937,6 +3000,21 @@ function nearBench(){
   });
   return f;
 }
+const WARM_RANGE=7;
+// A held torch, any firepit within range, or a crewmate carrying a torch.
+function warmthNear(){
+  if(S.equipped==='torch' && have('torch')>0) return true;
+  let warm=false;
+  S.builds.forEach(r=>{
+    if(warm||r.t!=='fi') return;
+    if(Math.hypot(r.gx*C-S.pos.x, r.gz*C-S.pos.z)<WARM_RANGE) warm=true;
+  });
+  if(!warm) S.peers.forEach(pr=>{
+    if(warm||!pr.alive||pr.tool!=='torch') return;
+    if(Math.hypot(pr.x-S.pos.x, pr.z-S.pos.z)<WARM_RANGE) warm=true;
+  });
+  return warm;
+}
 function nearFire(){
   let f=false;
   S.builds.forEach(r=>{ if(r.t==='fi' && Math.hypot(r.gx*C-S.pos.x,r.gz*C-S.pos.z)<6) f=true; });
@@ -2948,7 +3026,18 @@ function survivalTick(dt){
   S.water=clamp(S.water-0.180*hardK*dt,0,100);
   if(S.food<=0)  S.hp-=1.4*dt;
   if(S.water<=0) S.hp-=2.0*dt;
-  if(isNight() && !nearFire() && S.equipped!=='torch' && S.pos.y>0.4) S.hp-=0.32*hardK*dt;
+  // cold builds rather than biting instantly, so you get a window to reach a flame
+  const night=isNight(), warm=warmthNear();
+  if(night && !warm){
+    S.chill=clamp(S.chill + (100/50)*hardK*dt, 0, 100);
+    if(S.chill>18 && !S.chillWarned){
+      S.chillWarned=true; toast('The cold is getting into you — find a flame');
+    }
+  }else{
+    S.chill=clamp(S.chill - (100/22)*dt, 0, 100);
+    if(S.chill<8) S.chillWarned=false;
+  }
+  if(S.chill>35) S.hp -= ((S.chill-35)/65)*2.4*hardK*dt;
   if(S.pos.y<0.35) S.water=clamp(S.water-0.25*dt,0,100);   // salt spray
   if(S.food>45&&S.water>45&&S.hp<100) S.hp=Math.min(100,S.hp+0.55*dt);
   if(S.hp<=0) die('The isle took you');
@@ -3045,17 +3134,27 @@ function renderChest(){
     for(const k in src){
       const n=src[k]; if(!n||n<=0) continue; any=true;
       const meta=ITEMS[k]||TOOLS[k]||{n:k,ic:'🩹'};
-      const d=document.createElement('div'); d.className='cell';
+      const d=document.createElement('div'); d.className='cell tapcell';
       d.innerHTML='<div class="ic">'+meta.ic+'</div><div class="nm">'+meta.n+
-                  '</div><div class="ct">'+n+'</div>';
-      d.addEventListener('click',()=>{ fn(k); renderChest(); });
+                  '</div><div class="ct">'+n+'</div>'+
+                  (n>1?'<button class="allchip">ALL</button>':'');
+      // tap moves one; the ALL chip moves the stack, because 200 taps is not a game
+      d.addEventListener('click',ev=>{
+        if(ev && ev.target && ev.target.className==='allchip') return;
+        fn(k,1); renderChest();
+      });
+      const chip=d.querySelector('.allchip');
+      if(chip && chip.addEventListener) chip.addEventListener('click',ev=>{
+        if(ev&&ev.stopPropagation) ev.stopPropagation();
+        fn(k,src[k]); renderChest();
+      });
       el.appendChild(d);
     }
     if(!any) el.innerHTML='<div class="cell" style="grid-column:1/-1;text-align:left">'+
       '<div class="nm">'+empty+'</div></div>';
   };
-  fill(cg,S.vault,withdrawAll,'Nothing stored');
-  fill(pg,S.inv,depositAll,'Your pack is empty');
+  fill(cg,S.vault,withdraw,'Nothing stored');
+  fill(pg,S.inv,deposit,'Your pack is empty');
   const sub=$('chestsub');
   if(sub && !S.vaultLoaded){
     sub.textContent='Chest unreachable — storage did not answer. Nothing will be saved or lost.';
@@ -3063,7 +3162,7 @@ function renderChest(){
   }
   if(sub) sub.textContent = S.vaultDer
     ? 'Flagged derelict — a raider who breaks your door can empty this right now.'
-    : 'Stored here it survives your death. Tap to move a stack.';
+    : 'Stored here it survives your death. Tap moves one — ALL moves the stack.';
 }
 function renderPack(){
   const g=$('packgrid'); if(!g) return;
@@ -3139,6 +3238,7 @@ function updateHUD(){
   const set=(bar,val,lab)=>{ $(bar).firstElementChild.style.width=clamp(val,0,100)+'%'; $(lab).textContent=Math.round(val); };
   set('b_hp',S.hp,'v_hp'); set('b_food',S.food,'v_food');
   set('b_water',S.water,'v_water'); set('b_stam',S.stam,'v_stam');
+  set('b_warm',100-S.chill,'v_warm');
   if(S.myDrop && DROPS.some(d=>d.id===S.myDrop.id)){
     const dd=Math.round(Math.hypot(S.myDrop.x-S.pos.x,S.myDrop.z-S.pos.z));
     $('v_cache').textContent=dd+'m';
@@ -3781,6 +3881,7 @@ function frame(time){
       // held torches
       if(selfAvatar){
         setAvatarTool(selfAvatar,S.equipped);
+        setNock(selfAvatar,have('arrow'));
         flickerTool(selfAvatar,t,0);
         torchLight(S,S.equipped==='torch'&&S.phase==='play',
                    S.pos.x,S.pos.y+1.45,S.pos.z,t);
@@ -3791,6 +3892,7 @@ function frame(time){
       let i=1;
       S.peers.forEach(pr=>{
         if(pr.tool!==undefined) setAvatarTool(pr.av,pr.tool);
+        setNock(pr.av,1);
         flickerTool(pr.av,t,i*1.7);
         torchLight(pr,pr.tool==='torch'&&pr.alive,pr.x,pr.y+1.45,pr.z,t);
         i++;
@@ -3869,7 +3971,7 @@ async function startRun(){
   toast('Storage: '+Net.label());
 }
 function resetRunState(){
-  S.hp=100; S.food=100; S.water=100; S.stam=100;
+  S.hp=100; S.food=100; S.water=100; S.stam=100; S.chill=0; S.chillWarned=false;
   S.inv={wood:0,fiber:0,stone:0}; S.equipped='hands'; S.hotIdx=0;
   S.kills=0; S.built=0; S.day=1; S.tod=0.27;
   S.broken=new Set();
