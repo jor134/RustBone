@@ -2986,10 +2986,12 @@ function refreshHotbar(){
     el.querySelector('.ct').textContent =
       id==='hands' ? '' : (id==='bow' ? (owned?have('arrow'):'') : (owned||''));
     el.style.opacity = owned?1:0.32;
-    const bar=el.querySelector('.dur'), fill=bar&&bar.firstElementChild;
-    if(bar){
+    // NB: do not name this 'bar' — it would shadow the outer hotbar element
+    // for the whole block and put `bar.children[i]` above into the TDZ.
+    const durBar=el.querySelector('.dur'), fill=durBar&&durBar.firstElementChild;
+    if(durBar){
       const show = isTool && id!=='hands' && owned>0;
-      bar.style.display = show?'block':'none';
+      durBar.style.display = show?'block':'none';
       if(show){
         const pct=clamp(durOf(id)/toolMax(id),0,1);
         fill.style.width=(pct*100).toFixed(0)+'%';
@@ -3193,7 +3195,8 @@ function updateHUD(){
     track.innerHTML=html;
   }
   const deg=((-S.yaw*180/Math.PI)%360+360)%360;
-  track.style.left = (-(deg/15)*40 - 40*24 + track.parentElement.clientWidth/2 - 20)+'px';
+  const cw=(track.parentElement&&track.parentElement.clientWidth)||240;
+  track.style.left = (-(deg/15)*40 - 40*24 + cw/2 - 20)+'px';
 }
 
 /* ============================================================
