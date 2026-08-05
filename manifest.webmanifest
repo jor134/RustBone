@@ -1,0 +1,20 @@
+{
+  "name": "SALTBONE — Survive the Isle",
+  "short_name": "SALTBONE",
+  "description": "A PvEvP shipwreck survival run. Build a fort, hunt the isle, and hold what you built until you die.",
+  "id": "/",
+  "start_url": "/?mode=app",
+  "scope": "/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#0d1418",
+  "theme_color": "#0d1418",
+  "categories": ["games", "entertainment"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

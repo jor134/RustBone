@@ -85,3 +85,41 @@ establish a direct path; those sessions fall back to the KV lane automatically a
   hydration loop and it's deliberate — it forces you off the high ground.
 - Beasts break doors and walls but cannot open a barred door. Nothing on the island can,
   which makes a Door strictly better than a Doorway once you can afford the fibre.
+
+## Installing as an app (PWA)
+
+New files at the repo root: `manifest.webmanifest`, `sw.js`, `icon-192.png`,
+`icon-512.png`, `icon-maskable-512.png`, `apple-touch-icon.png`. All of them must sit
+beside `index.html` at the root — `sw.js` in particular, because a service worker can
+only control the paths at or below its own.
+
+**iPhone / iPad.** Safari only. Chrome and Firefox on iOS cannot install web apps at all,
+which is a WebKit restriction, not something the page can work around. The menu button
+walks the player through Share → Add to Home Screen. Once installed it runs with no
+browser chrome and honours the safe-area insets already in the CSS.
+
+**Chrome / Edge (Android and desktop).** `beforeinstallprompt` is captured and the menu
+button fires the real install prompt. Requires https, which Vercel provides.
+
+**Anything else.** The "Play fullscreen" button uses the Fullscreen API. It does nothing
+on iPhone Safari, which has no Fullscreen API — installing is the only route there.
+
+### The service worker is deliberately network-first
+
+A cache-first worker would pin every player to the build they installed and make your
+future fixes invisible. Navigations hit the network first and only fall back to cache
+when offline. `/api/*` is never intercepted, so multiplayer state can never come from a
+cache. Bump `VERSION` in `sw.js` when you want to force old caches out.
+
+## VR controls
+
+The DOM HUD does not exist inside a headset, so VR gets its own console strapped to the
+left controller: vitals, warmth, equipped tool, arrow count, day/time and the last
+message, drawn to canvas textures.
+
+Eight buttons in two rows — `<TOOL` `TOOL>` `USE` `BUILD` on top, `<PART` `PART>` `TURN`
+`CRAFT` below. `CRAFT` folds out a full recipe list beside your forearm; each row shows
+its cost and greys out when you cannot afford it or are away from a workbench.
+
+Point the right controller and pull the trigger. Pointing at the console presses it
+instead of swinging, so you never chop a tree by accident while changing tools.
