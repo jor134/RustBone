@@ -119,6 +119,10 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 .slot .ic{font-size:15px;line-height:1}
 .slot .nm{font-size:7px;letter-spacing:.06em;color:#8d9aa1;text-transform:uppercase}
 .slot .ct{position:absolute;right:3px;top:2px;font-size:9px;color:var(--sand)}
+.slot .dur{position:absolute;left:3px;right:3px;bottom:2px;height:3px;
+  background:#0b1519;border-radius:1px;overflow:hidden;display:none}
+.slot .dur b{display:block;height:100%;width:100%;background:var(--kelp);
+  transition:width .15s linear}
 
 /* touch controls */
 #stick{position:absolute;left:0;bottom:0;width:44%;height:52%;pointer-events:auto}
@@ -998,6 +1002,16 @@ function buildZoneProps(seed){
     }
   }
 }
+const CRATE_REFILL=420;   // seconds
+function refreshCrates(){
+  for(const c of CRATES){
+    if(!c.looted) continue;
+    if(S.t-c.lootedAt < CRATE_REFILL) continue;
+    c.looted=false;
+    c.mesh.traverse(o=>{ if(o.material&&o.material.color&&o.userData.c0!==undefined)
+      o.material.color.setHex(o.userData.c0); });
+  }
+}
 function spawnCrate(x,z){
   const g=new THREE.Group();
   const box=new THREE.Mesh(new THREE.BoxGeometry(1.3,1.0,1.3),toon(0x9c7a3d));
@@ -1005,8 +1019,9 @@ function spawnCrate(x,z){
   const band=new THREE.Mesh(new THREE.BoxGeometry(1.38,0.16,1.38),toon(0x4d5b60));
   band.position.y=0.5; g.add(band);
   g.position.set(x,heightAt(x,z),z); g.rotation.y=Math.random()*6.28;
+  g.traverse(o=>{ if(o.material&&o.material.color) o.userData.c0=o.material.color.getHex(); });
   scene.add(g);
-  CRATES.push({x,z,mesh:g,looted:false});
+  CRATES.push({x,z,mesh:g,looted:false,lootedAt:0});
 }
 function buildWreck(x,z){
   const g=new THREE.Group();
@@ -1062,6 +1077,7 @@ const S = {
   hp:100, food:100, water:100, stam:100, temp:100,
   inv:{}, hotIdx:0, equipped:'hands',
   charKey:'', vault:{}, vaultDer:0, vaultLoaded:false, fortLoaded:false, broken:new Set(),
+  dur:{},
   camDist:3.1, camTight:false,
   inRun:false, vrOK:false,
   buildMode:false, pieceIdx:0, pieceRot:0,
@@ -1125,7 +1141,7 @@ const PIECES = [
   {id:'f',  name:'Floor',    cost:{wood:6},           hp:180},
   {id:'w',  name:'Wall',     cost:{wood:4},           hp:140},
   {id:'d',  name:'Window',   cost:{wood:5},           hp:130},
-  {id:'dr', name:'Door',     cost:{wood:8,fiber:6},   hp:500},
+  {id:'dr', name:'Door',     cost:{scrap:5,rope:3},   hp:500},
   {id:'r',  name:'Roof',     cost:{wood:5,fiber:2},   hp:120},
   {id:'p',  name:'Pillar',   cost:{wood:3},           hp:160},
   {id:'st', name:'Stairs',   cost:{wood:10,fiber:2},  hp:170},
@@ -1136,6 +1152,35 @@ const PIECES = [
 ];
 const P_BY_ID={}; PIECES.forEach(p=>P_BY_ID[p.id]=p);
 
+const MAX_DUR=50;
+function toolMax(id){ return (TOOLS[id]&&TOOLS[id].dur)||MAX_DUR; }
+function durOf(id){
+  if(!TOOLS[id]||id==='hands') return 0;
+  if(S.dur[id]===undefined) S.dur[id]=toolMax(id);
+  return S.dur[id];
+}
+// One point per landed blow. A whiffed swing costs nothing.
+function wearTool(){
+  const id=S.equipped;
+  if(id==='hands'||!TOOLS[id]||have(id)<=0) return;
+  const left=durOf(id)-1;
+  S.dur[id]=left;
+  if(left<=0){
+    S.inv[id]--;
+    spawnBurst(S.pos.x,S.pos.y+1.3,S.pos.z,{color:0x8a6540,n:9,size:0.06,life:0.7,spread:2,up:2.4});
+    if(have(id)>0){
+      S.dur[id]=toolMax(id);
+      toast(TOOLS[id].n+' snaps — you have a spare');
+    }else{
+      delete S.dur[id];
+      S.equipped='hands'; S.hotIdx=0;
+      toast(TOOLS[id].n+' snaps in your hand');
+    }
+  }else if(left===12){
+    toast(TOOLS[id].n+' is failing — '+left+' left in it');
+  }
+  refreshHotbar();
+}
 function have(id){ return S.inv[id]||0; }
 function add(id,n){ S.inv[id]=(S.inv[id]||0)+n; refreshHotbar(); }
 function canPay(cost){ for(const k in cost) if(have(k)<cost[k]) return false; return true; }
@@ -1883,6 +1928,7 @@ async function loadVault(){
       const v=await Net.get(K.vault());
       S.vault=(v&&v.items)||{};
       S.vaultDer=(v&&v.derelict)||0;
+      if(v&&v.dur) S.dur=Object.assign({},v.dur,S.dur);
       S.vaultLoaded=true;
       if(S.vaultDer && now()-S.vaultDer>CFG.DERELICT_MS){ S.vaultDer=0; saveVault(); }
       return;
@@ -1895,7 +1941,7 @@ async function loadVault(){
 }
 function saveVault(keepalive){
   if(!S.vaultLoaded || !S.charKey) return;
-  Net.set(K.vault(),{o:S.charKey,name:S.name,items:S.vault,derelict:S.vaultDer,at:now()},keepalive);
+  Net.set(K.vault(),{o:S.charKey,name:S.name,items:S.vault,dur:S.dur,derelict:S.vaultDer,at:now()},keepalive);
 }
 function vaultCount(){ let n=0; for(const k in S.vault) n+=S.vault[k]; return n; }
 function depositAll(k){
@@ -2612,7 +2658,7 @@ function makeArrowMesh(){
 }
 function fireArrow(t){
   if(have('arrow')<=0){ toast('Quiver empty'); return; }
-  S.inv.arrow--; refreshHotbar();
+  S.inv.arrow--; wearTool();
   const dir=aimDir();
   const org=aimOrigin().addScaledVector(dir,0.7);
   const a={mesh:makeArrowMesh(), pos:org, vel:dir.clone().multiplyScalar(t.muzzle||54),
@@ -2708,6 +2754,7 @@ function doStrike(){
     if(hostId && hostId!==S.pid && !rtcSendTo(hostId,{t:'a',a:best.id,d:t.dmg},true))
       queueAHit(best.id,t.dmg);
     if(best.hp<=0) killAnimal(best);
+    wearTool();
     return;
   }
   // 2) other castaways — anywhere on the island
@@ -2718,7 +2765,7 @@ function doStrike(){
     const d=inCone(org,dir,p,reach+0.8,cosLim);
     if(d>=0){
       if(!rtcSendTo(id,{t:'h',d:t.dmg},true)) queueHit(id,t.dmg);
-      toast('Struck '+(pr.name||'castaway')); return;
+      toast('Struck '+(pr.name||'castaway')); wearTool(); return;
     }
   }
   // 3) resource nodes
@@ -2729,12 +2776,12 @@ function doStrike(){
     const d=inCone(org,dir,p,reach+1.4,0.4);
     if(d>=0&&d<nd){ nd=d; node=n; }
   }
-  if(node){ gather(node,t); return; }
+  if(node){ gather(node,t); wearTool(); return; }
   // 4) crates
   for(const c of CRATES){
     if(c.looted) continue;
     const p=new THREE.Vector3(c.x,heightAt(c.x,c.z)+0.6,c.z);
-    if(inCone(org,dir,p,reach+1.2,0.4)>=0){ lootCrate(c); return; }
+    if(inCone(org,dir,p,reach+1.2,0.4)>=0){ lootCrate(c); wearTool(); return; }
   }
   // 5) structures — your own (salvage back) or derelict (raid)
   let hit=null,hd=1e9;
@@ -2752,6 +2799,7 @@ function doStrike(){
       toast('Salvaged back');
     } else if(r.derelict){
       if(r.t==='dr'){
+        wearTool();
         damagePiece(hit,t.dmg);
         const left=S.builds.get(hit);
         if(left) toast('Door '+Math.max(0,Math.round(left.hp))+'/'+P_BY_ID.dr.hp);
@@ -2796,14 +2844,15 @@ function gather(n,t){
   }
 }
 function lootCrate(c){
-  c.looted=true;
+  c.looted=true; c.lootedAt=S.t;
   c.mesh.traverse(o=>{ if(o.material&&o.material.color) o.material.color.multiplyScalar(0.45); });
   const roll=Math.random();
-  add('scrap',2+Math.floor(Math.random()*3));
+  add('scrap',3+Math.floor(Math.random()*3));
   add('rope',1+Math.floor(Math.random()*2));
   if(roll>0.6) add('flint',3);
   if(roll>0.85){ add('spear',1); toast('A spear in the crate'); }
-  toast('Crate cracked — salvage secured');
+  spawnBurst(c.x,heightAt(c.x,c.z)+0.7,c.z,{color:0x9c7a3d,n:10,size:0.07,life:0.7,puff:2});
+  toast('Crate cracked — salvage secured. It will refill in time.');
 }
 
 function doorNear(){
@@ -2923,7 +2972,7 @@ function refreshHotbar(){
     bar.innerHTML='';
     HOT.forEach((id,i)=>{
       const d=document.createElement('div'); d.className='slot'; d.dataset.i=i;
-      d.innerHTML='<div class="ic"></div><div class="nm"></div><div class="ct"></div>';
+      d.innerHTML='<div class="ic"></div><div class="nm"></div><div class="ct"></div><i class="dur"><b></b></i>';
       d.addEventListener('click',()=>selectHot(i));
       bar.appendChild(d);
     });
@@ -2937,6 +2986,16 @@ function refreshHotbar(){
     el.querySelector('.ct').textContent =
       id==='hands' ? '' : (id==='bow' ? (owned?have('arrow'):'') : (owned||''));
     el.style.opacity = owned?1:0.32;
+    const bar=el.querySelector('.dur'), fill=bar&&bar.firstElementChild;
+    if(bar){
+      const show = isTool && id!=='hands' && owned>0;
+      bar.style.display = show?'block':'none';
+      if(show){
+        const pct=clamp(durOf(id)/toolMax(id),0,1);
+        fill.style.width=(pct*100).toFixed(0)+'%';
+        fill.style.background = pct>0.5 ? '#4f7a52' : (pct>0.22 ? '#c9a670' : '#a8302c');
+      }
+    }
     el.classList.toggle('on', S.hotIdx===i);
   });
   renderCraft(); renderPack(); renderChest(); renderBuildBar();
@@ -3012,7 +3071,10 @@ function renderPack(){
     const n=S.inv[k]; if(!n||n<=0) continue; any=true;
     const meta=ITEMS[k]||TOOLS[k]||{n:k,ic:'🩹'};
     const d=document.createElement('div'); d.className='cell';
-    d.innerHTML='<div class="ic">'+meta.ic+'</div><div class="nm">'+meta.n+'</div><div class="ct">'+n+'</div>';
+    const wearTxt = (TOOLS[k]&&k!=='hands')
+      ? '<div class="nm" style="color:#7f8b91">'+durOf(k)+'/'+toolMax(k)+' uses</div>' : '';
+    d.innerHTML='<div class="ic">'+meta.ic+'</div><div class="nm">'+meta.n+
+                '</div><div class="ct">'+n+'</div>'+wearTxt;
     g.appendChild(d);
   }
   if(!any) g.innerHTML='<div class="cell" style="grid-column:1/-1;text-align:left"><div class="nm">Empty. Punch a tree.</div></div>';
@@ -3695,6 +3757,7 @@ function frame(time){
     safe('beasts',()=>updateAnimals(dt));
     safe('arrows',()=>updateArrows(dt));
     safe('debris',()=>updateParticles(dt));
+    safe('crates',()=>refreshCrates());
     safe('wind',  ()=>{ if(grassU) grassU.uTime.value=t; });
     safe('peers', ()=>updatePeers(dt));
     safe('ghost', ()=>updateGhost());
