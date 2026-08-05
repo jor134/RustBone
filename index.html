@@ -191,7 +191,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
   <div class="tag">A PvEvP survival run</div>
   <h1 class="dsp">SALT<em>BONE</em></h1>
   <div id="best"></div>
-  <div class="field"><label class="lbl">Castaway name</label><input id="i_name" maxlength="12" placeholder="DRIFTER"></div>
+  <div class="field"><label class="lbl">Castaway name — this IS your character. Same name + island = same chest.</label><input id="i_name" maxlength="12" placeholder="DRIFTER"></div>
   <div class="field"><label class="lbl">Island code — share it to play together</label><input id="i_room" maxlength="6" placeholder="REEF01"></div>
   <div class="field"><label class="lbl">Crew tag — same tag = allies, shared fort</label><input id="i_team" maxlength="6" placeholder="leave blank to go solo"></div>
   <div class="seg">
@@ -845,13 +845,26 @@ const S = {
   yaw:0, pitch:-0.12, onGround:true, camMode:3, vr:false,
   hp:100, food:100, water:100, stam:100, temp:100,
   inv:{}, hotIdx:0, equipped:'hands',
+  charKey:'', vault:{}, vaultDer:0,
   buildMode:false, pieceIdx:0, pieceRot:0,
   builds:new Map(), buildMeshes:new Map(),
   peers:new Map(),
   kills:0, built:0, lootPending:null,
   swing:0, hurtFlash:0, lastAte:0
 };
-const ME = ()=> S.team ? ('T_'+S.team) : ('P_'+S.pid);   // fort ownership key
+// Ownership used to key off S.pid — a random token in localStorage that was
+// regenerated on every respawn and did not exist at all on another device or
+// after clearing site data. Rejoining with the same name locked you out of
+// your own chest. It now derives from island code + name, so "same name, same
+// island" really is the same character. Two players sharing a name on one
+// island will share a vault; that is the trade for portability.
+function charFrom(room,name){ return 'c'+hashStr(room+'|'+name).toString(36); }
+const ME = ()=> S.team ? ('T_'+S.team) : ('C_'+S.charKey);
+
+// A derelict fort is nobody's, including yours. You have to break back in.
+function mine(r){
+  return !!r && !r.derelict && (r.o===ME() || (r.char && r.char===S.charKey));
+}
 
 /* ============================================================
    ITEMS / RECIPES / BUILD PIECES
@@ -1186,7 +1199,7 @@ function ghostRecord(){
     return {base:base, lv:clamp(Math.round((feet.y-base)/L)+lvBias,0,6)};
   };
 
-  const rec={t:p.id,gx:0,gz:0,lv:0,s:0,y:0,hp:p.hp,o:ME()};
+  const rec={t:p.id,gx:0,gz:0,lv:0,s:0,y:0,hp:p.hp,o:ME(),char:S.charKey};
 
   /* ---- floors sit on terrain or on the storey below ---- */
   if(p.id==='f'){
@@ -1389,11 +1402,7 @@ function damagePiece(id,dmg){
    It is NOT safe: while you are dead the vault is flagged derelict for the
    same five minutes as the fort, and anyone who breaks your door can empty it.
    ============================================================ */
-function charIdentity(){
-  let c=LS.get('sb_char_'+S.room);
-  if(!c){ c=Math.random().toString(36).slice(2,10); LS.set('sb_char_'+S.room,c); }
-  S.charKey=c;
-}
+function charIdentity(){ S.charKey=charFrom(S.room,S.name); }
 async function loadVault(){
   try{
     const v=await Net.get(K.vault());
@@ -2064,7 +2073,7 @@ function doStrike(){
   });
   if(hit){
     const r=S.builds.get(hit);
-    if(r.o===ME()){
+    if(mine(r)){
       removePiece(hit,true); pushFort();
       const cost=P_BY_ID[r.t].cost;
       for(const k in cost) add(k,Math.max(1,Math.floor(cost[k]/2)));
@@ -2127,14 +2136,14 @@ function refreshDoor(id){
 }
 function toggleDoor(id){
   const r=S.builds.get(id); if(!r) return;
-  if(r.o!==ME()){
+  if(!mine(r)){
     toast(r.derelict?'Barred. You will have to break it.':'Barred from the inside.');
     return;
   }
   r.op = r.op ? 0 : 1;
   refreshDoor(id);
   toast(r.op?'Door open':'Door barred');
-  if(r.o===ME()) pushFort();
+  pushFort();
   rtcSend({t:'f',op:'door',id:id,v:r.op},true);
 }
 
@@ -2145,8 +2154,8 @@ function doUse(){
   if(cache){ lootDrop(cache); return; }
   const ch=chestNear();
   if(ch){
-    if(ch.o===ME()) openChest();
-    else if(ch.derelict && ch.char) raidVault(ch.char);
+    if(ch.derelict) raidVault(ch.char||S.charKey);   // your own ruin counts
+    else if(mine(ch)) openChest();
     else toast('Locked — the owner still draws breath');
     return;
   }
@@ -2361,12 +2370,16 @@ function updateHUD(){
     const cd=nearestDrop();
     const cn=cd?null:chestNear();
     if(cd) setPrompt('Use — take the cache ('+itemsCount(cd.items)+' items)');
-    else if(cn) setPrompt(cn.o===ME() ? ('Use — chest ('+vaultCount()+' stored)')
-                        : (cn.derelict?'Use — strip this chest':'Locked chest'));
+    else if(cn) setPrompt(cn.derelict ? 'Use — strip this chest'
+                        : (mine(cn) ? 'Use — chest ('+vaultCount()+' stored)' : 'Locked chest'));
     else{
       const dn=doorNear();
-      setPrompt(dn ? (dn && S.builds.get(dn).o!==ME() ? 'Barred from the inside'
-                     : (S.builds.get(dn).op ? 'Use — bar the door' : 'Use — open the door')) : null);
+      if(!dn) setPrompt(null);
+      else{
+        const dr=S.builds.get(dn);
+        setPrompt(!mine(dr) ? 'Barred — break it or leave it'
+                 : (dr.op ? 'Use — bar the door' : 'Use — open the door'));
+      }
     }
   }
   const zn=insideAnyZone(S.pos.x,S.pos.z);
@@ -2744,9 +2757,9 @@ async function slowSync(){
   // push my fort
   if(fortDirty && now()-lastFortPush>1200){
     fortDirty=false; lastFortPush=now();
-    const mine=[];
-    S.builds.forEach(r=>{ if(r.o===ME()) mine.push({t:r.t,gx:r.gx,gz:r.gz,lv:r.lv,s:r.s,y:r.y,hp:r.hp,op:r.op||0}); });
-    if(mine.length) await Net.set(K.fort(ME()),{o:ME(),char:S.charKey,ts:now(),derelict:0,pieces:mine});
+    const own=[];
+    S.builds.forEach(r=>{ if(mine(r)) own.push({t:r.t,gx:r.gx,gz:r.gz,lv:r.lv,s:r.s,y:r.y,hp:r.hp,op:r.op||0}); });
+    if(own.length) await Net.set(K.fort(ME()),{o:ME(),char:S.charKey,ts:now(),derelict:0,pieces:own});
     else await Net.del(K.fort(ME()));
   }
   // pull caches
@@ -2767,7 +2780,7 @@ async function slowSync(){
   for(const it of items){
     const f=it.value; if(!f||!f.pieces) continue;
     if(f.derelict && now()-f.derelict>CFG.DERELICT_MS){ await Net.del(it.key); continue; }
-    const isMine = f.o===ME();
+    const isMine = !f.derelict && f.o===ME();
     for(const p of f.pieces){
       const rec=Object.assign({},p,{o:f.o,char:f.char,derelict:!!f.derelict});
       const id=pieceId(rec);
@@ -2781,7 +2794,7 @@ async function slowSync(){
   // remove pieces that vanished remotely (never touch my own optimistic writes)
   Array.from(S.builds.keys()).forEach(id=>{
     const r=S.builds.get(id);
-    if(r.o===ME()) return;
+    if(mine(r)) return;
     if(!keepIds.has(id)) removePiece(id);
   });
 }
@@ -2795,13 +2808,14 @@ function tintDerelict(owner){
   });
 }
 async function markFortDerelict(){
-  const mine=[];
-  S.builds.forEach(r=>{ if(r.o===ME()) mine.push({t:r.t,gx:r.gx,gz:r.gz,lv:r.lv,s:r.s,y:r.y,hp:r.hp}); });
+  fortDirty=false;                    // never resurrect it with a later push
+  const own=[];
+  S.builds.forEach(r=>{ if(mine(r)) own.push({t:r.t,gx:r.gx,gz:r.gz,lv:r.lv,s:r.s,y:r.y,hp:r.hp,op:r.op||0}); });
   // only wipe if no living teammate remains
   let mateAlive=false;
   if(S.team) for(const [,pr] of S.peers) if(pr.team===S.team&&pr.alive) mateAlive=true;
   if(mateAlive){ toast('Your crewmate still holds the fort.'); return; }
-  if(mine.length) await Net.set(K.fort(ME()),{o:ME(),char:S.charKey,ts:now(),derelict:now(),pieces:mine});
+  if(own.length) await Net.set(K.fort(ME()),{o:ME(),char:S.charKey,ts:now(),derelict:now(),pieces:own});
   else await Net.del(K.fort(ME()));
 }
 
@@ -2989,7 +3003,8 @@ async function startRun(){
   $('death').style.display='none';
   S.phase='play'; S.runStart=now();
   refreshHotbar();
-  toast('You wash ashore on '+S.room+'. Find water before dark.');
+  toast('You wash ashore on '+S.room+' as '+S.name+'. Your chest answers to that name.');
+  toast('Find water before dark.');
   toast('Storage: '+Net.label());
 }
 function resetRunState(){
@@ -2998,7 +3013,7 @@ function resetRunState(){
   S.kills=0; S.built=0; S.day=1; S.tod=0.27;
   S.buildMode=false; $('buildbar').style.display='none'; $('s_build').classList.remove('on');
   // clear my own fort remnants from the last life
-  Array.from(S.builds.keys()).forEach(id=>{ const r=S.builds.get(id); if(r.o===ME()) removePiece(id); });
+  Array.from(S.builds.keys()).forEach(id=>{ const r=S.builds.get(id); if(mine(r)) removePiece(id); });
 }
 
 function boot(){
