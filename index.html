@@ -48,7 +48,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 #play{width:100%;max-width:330px;padding:15px;margin-top:4px;font-size:18px;
   background:var(--rust);color:#130b07;border-radius:3px;letter-spacing:.08em}
 #play:active{transform:translateY(1px)}
-#vrbtn{max-width:330px;width:100%;padding:11px;font-size:11px;letter-spacing:.2em;
+#vrbtn{max-width:330px;width:100%;padding:11px;font-size:10px;letter-spacing:.16em;line-height:1.4;
   text-transform:uppercase;border:1px solid #2c4048;border-radius:3px;color:#8d9aa1;display:none}
 #boot .note{max-width:340px;font-size:10px;line-height:1.6;color:#5e6f77;text-align:center}
 #netbadge{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:#5e6f77;
@@ -136,7 +136,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 .abtn.big:active{background:var(--rust);color:#120a06}
 #sysbtns{position:absolute;right:10px;bottom:calc(env(safe-area-inset-bottom) + 8px);
   display:flex;gap:6px;pointer-events:auto}
-.sbtn{padding:8px 10px;font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+.sbtn{padding:8px 8px;font-size:9px;letter-spacing:.14em;text-transform:uppercase;
   background:rgba(11,21,25,.8);border:1px solid #2c4048;border-radius:3px;color:#8d9aa1}
 .sbtn.on{border-color:var(--rust);color:var(--rust)}
 
@@ -206,7 +206,8 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
   <button id="play" class="dsp">WASH ASHORE</button>
   <button id="vrbtn">Enter VR</button>
   <div id="netbadge">checking storage…</div>
-  <div class="note">Your fort stands until you die. Die and it goes derelict — lootable by anyone for five minutes, then the tide takes it. Weapons only cut other castaways inside a marked salvage zone.</div>
+  <div id="menuhint" style="display:none;font-size:10px;letter-spacing:.16em;color:#c1502e;text-transform:uppercase">Run paused — your shelter is saved</div>
+  <div class="note">Your fort stands until you die. Die and it goes derelict — lootable by anyone for five minutes, then the tide takes it. Every castaway on this island can cut you, anywhere. Salvage zones just hold the crates worth dying over.</div>
 </div>
 
 <div id="dmg"></div>
@@ -225,7 +226,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <div id="clockwrap">DAY <b id="v_day">1</b> · <b id="v_tod">06:00</b></div>
     <div id="cachewrap" style="display:none;color:#c1502e">CACHE <b id="v_cache">—</b></div>
   </div>
-  <div id="zonewarn"><div class="z1 dsp">SALVAGE ZONE</div><div class="z2">Blades cut castaways here</div></div>
+  <div id="zonewarn"><div class="z1 dsp">SALVAGE ZONE</div><div class="z2">Rich salvage — and others know it</div></div>
   <div id="reticle"></div>
   <div id="prompt"></div>
   <div id="log"></div>
@@ -244,6 +245,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <button class="sbtn" id="s_craft">Craft</button>
     <button class="sbtn" id="s_pack">Pack</button>
     <button class="sbtn" id="s_view">Cam</button>
+    <button class="sbtn" id="s_menu">Menu</button>
   </div>
 </div>
 
@@ -932,6 +934,7 @@ const S = {
   hp:100, food:100, water:100, stam:100, temp:100,
   inv:{}, hotIdx:0, equipped:'hands',
   charKey:'', vault:{}, vaultDer:0, fortLoaded:false, broken:new Set(),
+  inRun:false, vrOK:false,
   buildMode:false, pieceIdx:0, pieceRot:0,
   builds:new Map(), buildMeshes:new Map(),
   peers:new Map(),
@@ -1389,6 +1392,7 @@ function ghostRecord(){
   }
 
   /* ---- everything else needs a floor under it ---- */
+  const WALLISH = (p.id==='w'||p.id==='d'||p.id==='dr'||p.id==='rl');
   let why='Stand on a floor to build that';
   for(const c of cells){
     const gx=c[0], gz=c[1], cx=gx*C, cz=gz*C;
@@ -1396,20 +1400,26 @@ function ghostRecord(){
     if(st.base===null) continue;
     const lv=st.lv;
     const f=foundationAt(gx,gz,lv);
-    if(!f){ why='No floor at that height'; continue; }
+    // no floor at this storey is fine for wall-like pieces: they stack on the
+    // course below, which is what lets you leave a double-height void
+    const y = f ? f.y : st.base + lv*L;
 
-    rec.gx=gx; rec.gz=gz; rec.lv=lv; rec.y=f.y;
+    rec.gx=gx; rec.gz=gz; rec.lv=lv; rec.y=y;
 
-    if(p.id==='w'||p.id==='d'||p.id==='dr'||p.id==='st'||p.id==='rl'){
+    if(WALLISH || p.id==='st'){
       const dx=aimPt.x-cx, dz=aimPt.z-cz;
       const auto = Math.abs(dx)>Math.abs(dz) ? (dx>0?0:2) : (dz>0?1:3);
-      rec.s=(auto+S.pieceRot)&3;            // Turn overrides the auto side
+      rec.s=(auto+S.pieceRot)&3;
       if(p.id==='st'){
+        if(!f){ why='Stairs need a floor to start from'; continue; }
         let taken=false;
         for(let sd=0;sd<4;sd++) if(findPiece('st',gx,gz,lv,sd)) taken=true;
         if(taken){ why='Stairs already in this bay'; continue; }
       }else{
         if(wallOnSide(gx,gz,lv,rec.s)){ why='That side is already filled'; continue; }
+        if(!f && !(lv>0 && wallOnSide(gx,gz,lv-1,rec.s))){
+          why='Needs a floor, or a course directly below'; continue;
+        }
         if(p.id==='dr') rec.op=0;
       }
     }
@@ -1418,9 +1428,21 @@ function ghostRecord(){
       const auto = dz>0 ? (dx>0?0:1) : (dx>0?3:2);
       rec.s=(auto+S.pieceRot)&3;
       if(findPiece('p',gx,gz,lv,rec.s)){ why='Pillar already there'; continue; }
+      if(!f && !(lv>0 && findPiece('p',gx,gz,lv-1,rec.s))){
+        why='Needs a floor, or a pillar directly below'; continue;
+      }
+    }
+    else if(p.id==='r'){
+      rec.s=0;
+      if(findPiece('r',gx,gz,lv,0)){ why='Already roofed'; continue; }
+      let carried=false;
+      for(let sd=0;sd<4;sd++)
+        if(wallOnSide(gx,gz,lv,sd)||findPiece('p',gx,gz,lv,sd)) carried=true;
+      if(!f && !carried){ why='Needs a floor or walls to sit on'; continue; }
     }
     else{
       rec.s=0;
+      if(!f){ why='Needs a floor beneath it'; continue; }
       if(findPiece(p.id,gx,gz,lv,0)){ why='Already placed here'; continue; }
     }
     return {rec:rec,why:null};
@@ -2080,6 +2102,8 @@ function setupInput(){
   $('s_craft').addEventListener('click',()=>togglePanel('p_craft'));
   $('s_pack').addEventListener('click',()=>togglePanel('p_pack'));
   $('s_view').addEventListener('click',cycleCam);
+  $('s_menu').addEventListener('click',openMenu);
+  addEventListener('keydown',e=>{ if(e.code==='Escape') openMenu(); });
   $('x_craft').addEventListener('click',()=>closePanels());
   $('x_pack').addEventListener('click',()=>closePanels());
   $('x_chest').addEventListener('click',()=>closePanels());
@@ -2257,16 +2281,13 @@ function updateArrows(dt){
       }
       if(done) break;
 
-      if(insideAnyZone(a.pos.x,a.pos.z)){
-        for(const [pid,pr] of S.peers){
-          if(!pr.alive||(pr.team&&pr.team===S.team)) continue;
-          if(!insideAnyZone(pr.x,pr.z)) continue;
-          if(Math.hypot(pr.x-a.pos.x,pr.z-a.pos.z)<0.7 &&
-             a.pos.y>pr.y && a.pos.y<pr.y+2.0){
-            if(!rtcSendTo(pid,{t:'h',d:a.dmg},true)) queueHit(pid,a.dmg);
-            toast('Arrow finds '+(pr.name||'a castaway'));
-            done=true; break;
-          }
+      for(const [pid,pr] of S.peers){
+        if(!pr.alive||(pr.team&&pr.team===S.team)) continue;
+        if(Math.hypot(pr.x-a.pos.x,pr.z-a.pos.z)<0.7 &&
+           a.pos.y>pr.y && a.pos.y<pr.y+2.0){
+          if(!rtcSendTo(pid,{t:'h',d:a.dmg},true)) queueHit(pid,a.dmg);
+          toast('Arrow finds '+(pr.name||'a castaway'));
+          done=true; break;
         }
       }
       if(done) break;
@@ -2320,18 +2341,15 @@ function doStrike(){
     if(best.hp<=0) killAnimal(best);
     return;
   }
-  // 2) other castaways (salvage zones only)
-  const zone=insideAnyZone(S.pos.x,S.pos.z);
-  if(zone){
-    for(const [id,pr] of S.peers){
-      if(pr.team && pr.team===S.team) continue;
-      if(!insideAnyZone(pr.x,pr.z)) continue;
-      const p=new THREE.Vector3(pr.x,pr.y+1.2,pr.z);
-      const d=inCone(org,dir,p,reach+0.8,cosLim);
-      if(d>=0){
-        if(!rtcSendTo(id,{t:'h',d:t.dmg},true)) queueHit(id,t.dmg);
-        toast('Struck '+(pr.name||'castaway')); return;
-      }
+  // 2) other castaways — anywhere on the island
+  for(const [id,pr] of S.peers){
+    if(!pr.alive) continue;
+    if(pr.team && pr.team===S.team) continue;
+    const p=new THREE.Vector3(pr.x,pr.y+1.2,pr.z);
+    const d=inCone(org,dir,p,reach+0.8,cosLim);
+    if(d>=0){
+      if(!rtcSendTo(id,{t:'h',d:t.dmg},true)) queueHit(id,t.dmg);
+      toast('Struck '+(pr.name||'castaway')); return;
     }
   }
   // 3) resource nodes
@@ -2644,6 +2662,23 @@ function togglePanel(id){
 }
 function closePanels(){ $('p_craft').style.display='none'; $('p_pack').style.display='none'; $('p_chest').style.display='none'; }
 function cycleCam(){ S.camMode = S.camMode===3?1:3; }
+function openMenu(){
+  if(S.phase==='menu') return;
+  saveOnExit();
+  S.inRun=true; S.phase='menu';
+  closePanels();
+  $('hud').style.display='none';
+  $('death').style.display='none';
+  $('boot').style.display='flex';
+  $('play').textContent='RETURN TO THE ISLE';
+  $('menuhint').style.display='block';
+}
+function resumeRun(){
+  $('boot').style.display='none';
+  $('hud').style.display='block';
+  S.phase='play';
+  refreshHotbar();
+}
 function setPrompt(txt){
   const p=$('prompt');
   if(!txt){ p.style.display='none'; return; }
@@ -3176,12 +3211,32 @@ function updateSky(dt){
 /* ============================================================
    VR
    ============================================================ */
+function vrDiag(){
+  return 'VR needs an immersive-VR headset browser.\n\n'+
+    'navigator.xr present: '+(!!navigator.xr)+'\n'+
+    'secure context (https): '+(window.isSecureContext===true)+'\n'+
+    'immersive-vr supported: '+(S.vrOK?'yes':'no')+'\n\n'+
+    'Phones and desktop browsers report no support even over https — there is no\n'+
+    'headset attached. Open this same URL in the Meta Quest Browser, Pico browser,\n'+
+    'Wolvic, or a PC browser with a headset connected and the button will arm.\n\n'+
+    'On a phone this is expected. Cardboard-style viewers are not immersive-vr.';
+}
 function setupVR(){
-  if(!navigator.xr) return;
+  const btn=$('vrbtn');
+  btn.style.display='block';                 // always shown, so it is never a mystery
+  if(!navigator.xr){
+    btn.textContent='VR — no WebXR in this browser';
+    btn.addEventListener('click',()=>showErr(vrDiag()));
+    return;
+  }
+  btn.textContent='VR — checking…';
   navigator.xr.isSessionSupported('immersive-vr').then(ok=>{
-    if(ok) $('vrbtn').style.display='block';
-  }).catch(()=>{});
-  $('vrbtn').addEventListener('click',async ()=>{
+    S.vrOK=ok;
+    btn.textContent = ok ? 'Enter VR' : 'VR — no headset detected (tap for why)';
+  }).catch(()=>{ btn.textContent='VR — check failed (tap for why)'; });
+
+  btn.addEventListener('click',async ()=>{
+    if(!S.vrOK){ showErr(vrDiag()); return; }
     try{
       const session=await navigator.xr.requestSession('immersive-vr',
         {optionalFeatures:['local-floor','bounded-floor','hand-tracking']});
@@ -3346,7 +3401,8 @@ async function startRun(){
   $('boot').style.display='none';
   $('hud').style.display='block';
   $('death').style.display='none';
-  S.phase='play'; S.runStart=now();
+  $('menuhint').style.display='none';
+  S.inRun=true; S.phase='play'; S.runStart=now();
   refreshHotbar();
   toast('You wash ashore on '+S.room+' as '+S.name+'. Your chest answers to that name.');
   setTimeout(()=>{
@@ -3393,6 +3449,14 @@ function boot(){
     LS.set('sb_name',$('i_name').value);
     LS.set('sb_room',$('i_room').value);
     LS.set('sb_team',$('i_team').value);
+    if(S.inRun && worldBuilt){
+      const room=($('i_room').value||'REEF01').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6)||'REEF01';
+      const name=($('i_name').value||'DRIFTER').toUpperCase().slice(0,12);
+      const team=($('i_team').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6);
+      if(room===S.room && name===S.name && team===S.team){ resumeRun(); return; }
+      // a different island or character needs a clean world
+      saveOnExit(); location.reload(); return;
+    }
     $('play').textContent='WADING ASHORE…';
     startRun().catch(e=>{ $('play').textContent='WASH ASHORE';
       showErr('[startRun] '+e.message+'\n'+String(e.stack||'').split('\n').slice(1,4).join('\n')); });
