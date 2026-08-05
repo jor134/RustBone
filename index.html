@@ -931,7 +931,7 @@ const S = {
   yaw:0, pitch:-0.12, onGround:true, camMode:3, vr:false,
   hp:100, food:100, water:100, stam:100, temp:100,
   inv:{}, hotIdx:0, equipped:'hands',
-  charKey:'', vault:{}, vaultDer:0, fortLoaded:false,
+  charKey:'', vault:{}, vaultDer:0, fortLoaded:false, broken:new Set(),
   buildMode:false, pieceIdx:0, pieceRot:0,
   builds:new Map(), buildMeshes:new Map(),
   peers:new Map(),
@@ -965,14 +965,17 @@ const ITEMS = {
   cooked: {n:'Cooked',  ic:'🍖'},
   coco:   {n:'Coconut', ic:'🥥'},
   scrap:  {n:'Scrap',   ic:'⚙️'},
-  rope:   {n:'Rope',    ic:'🪢'}
+  rope:   {n:'Rope',    ic:'🪢'},
+  arrow:  {n:'Arrow',   ic:'🪶'}
 };
 const TOOLS = {
   hands:{n:'Fists', ic:'✊', dmg:8,  reach:2.6, rate:0.55, gather:1},
   axe:  {n:'Axe',   ic:'🪓', dmg:22, reach:3.0, rate:0.65, gather:3, best:'tree'},
   pick: {n:'Pick',  ic:'⛏️', dmg:16, reach:3.0, rate:0.7,  gather:3, best:'rock'},
   spear:{n:'Spear', ic:'🔱', dmg:38, reach:4.0, rate:0.85, gather:1},
-  torch:{n:'Torch', ic:'🔥', dmg:10, reach:2.6, rate:0.6,  gather:1, light:true}
+  torch:{n:'Torch', ic:'🔥', dmg:10, reach:2.6, rate:0.6,  gather:1, light:true},
+  bow:  {n:'Bow',   ic:'🏹', dmg:6,  reach:2.0, rate:0.95, gather:1, ranged:true,
+         projDmg:48, muzzle:54}
 };
 const RECIPES = [
   {id:'axe',   name:'Stone axe',    cost:{wood:3,flint:2,fiber:2},  give:{axe:1},   desc:'Fells trees three times faster.'},
@@ -980,16 +983,22 @@ const RECIPES = [
   {id:'spear', name:'Bone spear',   cost:{wood:4,flint:2,fiber:3},  give:{spear:1}, desc:'Reach and damage. The only real answer to a stalker.'},
   {id:'torch', name:'Torch',        cost:{wood:2,fiber:2},          give:{torch:1}, desc:'Light at night. Beasts keep their distance.'},
   {id:'rope',  name:'Rope',         cost:{fiber:6},                 give:{rope:2},  desc:'Binds the heavier structures.'},
-  {id:'bandage',name:'Bandage',     cost:{fiber:5,hide:1},          give:{bandage:1},desc:'Restores 35 vitals.'}
+  {id:'bandage',name:'Bandage',     cost:{fiber:5,hide:1},          give:{bandage:1},desc:'Restores 35 vitals.'},
+  {id:'bow',   name:'Driftwood bow', cost:{wood:6,fiber:12,rope:2}, give:{bow:1}, bench:true,
+   desc:'Kills at range. Nothing on this island charges a bow twice.'},
+  {id:'arrow', name:'Arrows ×6',     cost:{wood:3,flint:2,fiber:2},  give:{arrow:6}, bench:true,
+   desc:'Fletched at the bench. Loosed arrows are gone for good.'}
 ];
 const PIECES = [
   {id:'f',  name:'Floor',    cost:{wood:6},           hp:180},
   {id:'w',  name:'Wall',     cost:{wood:4},           hp:140},
-  {id:'d',  name:'Doorway',  cost:{wood:5},           hp:130},
+  {id:'d',  name:'Window',   cost:{wood:5},           hp:130},
   {id:'dr', name:'Door',     cost:{wood:8,fiber:6},   hp:500},
   {id:'r',  name:'Roof',     cost:{wood:5,fiber:2},   hp:120},
   {id:'p',  name:'Pillar',   cost:{wood:3},           hp:160},
   {id:'st', name:'Stairs',   cost:{wood:10,fiber:2},  hp:170},
+  {id:'rl', name:'Railing',  cost:{wood:3},           hp:70},
+  {id:'wb', name:'Workbench',cost:{wood:12,stone:6,fiber:8}, hp:120},
   {id:'box',name:'Chest',    cost:{wood:8,fiber:4},   hp:90},
   {id:'fi', name:'Firepit',  cost:{wood:8,stone:6},   hp:70}
 ];
@@ -1143,6 +1152,7 @@ function pieceTransform(rec){
   else if(rec.t==='r'){ o.position.set(cx,y+L+0.15,cz); }
   else if(rec.t==='p'){ o.position.set(cx+(rec.s===0||rec.s===3?C/2:-C/2), y+L/2, cz+(rec.s<2?C/2:-C/2)); }
   else if(rec.t==='st'){ o.position.set(cx,y,cz); o.rotation.y=STAIR_ROT[rec.s||0]; }
+  else if(rec.t==='wb'){ o.position.set(cx,y,cz); }
   else if(rec.t==='box'){ o.position.set(cx,y+0.5,cz); o.rotation.y=(rec.s||0)*Math.PI/2; }
   else if(rec.t==='fi'){ o.position.set(cx,y+0.2,cz); }
   else { const off=sideOffset(rec.s); o.position.set(cx+off[0], y+L/2, cz+off[1]);
@@ -1168,6 +1178,50 @@ function buildPieceMesh(rec,ghost){
     for(let i=-1;i<=1;i+=2){
       const side=mk(new THREE.BoxGeometry((C-0.06-1.7)/2,2.1,0.26),WOOD_B);
       side.position.set(i*(C-0.06+1.7)/4, -(L-2.1)/2, 0); g.add(side);
+    }
+  }
+  else if(rec.t==='d'){
+    const sill=1.1, head=2.2, ow=1.8;
+    const bot=mk(new THREE.BoxGeometry(C-0.06,sill,0.26),WOOD_B);
+    bot.position.y=-L/2+sill/2; g.add(bot);
+    const top=mk(new THREE.BoxGeometry(C-0.06,L-head,0.26),WOOD_B);
+    top.position.y=L/2-(L-head)/2; g.add(top);
+    for(let i=-1;i<=1;i+=2){
+      const side=mk(new THREE.BoxGeometry((C-0.06-ow)/2,head-sill,0.26),WOOD_B);
+      side.position.set(i*(C-0.06+ow)/4, -L/2+sill+(head-sill)/2, 0); g.add(side);
+    }
+    if(!ghost){
+      const ledge=mk(new THREE.BoxGeometry(ow+0.34,0.11,0.44),WOOD_A);
+      ledge.position.set(0,-L/2+sill+0.05,0); g.add(ledge);
+      const mull=mk(new THREE.BoxGeometry(0.09,head-sill,0.11),WOOD_A);
+      mull.position.set(0,-L/2+sill+(head-sill)/2,0); g.add(mull);
+    }
+  }
+  else if(rec.t==='rl'){
+    const h=1.05;
+    const top=mk(new THREE.BoxGeometry(C-0.06,0.11,0.13),WOOD_A);
+    top.position.y=-L/2+h; g.add(top);
+    const mid=mk(new THREE.BoxGeometry(C-0.06,0.07,0.09),WOOD_A);
+    mid.position.y=-L/2+h*0.55; g.add(mid);
+    for(let i=-1;i<=1;i+=2){
+      const post=mk(new THREE.BoxGeometry(0.13,h,0.13),WOOD_B);
+      post.position.set(i*(C-0.22)/2,-L/2+h/2,0); g.add(post);
+    }
+    const mp=mk(new THREE.BoxGeometry(0.1,h,0.1),WOOD_B); mp.position.y=-L/2+h/2; g.add(mp);
+  }
+  else if(rec.t==='wb'){
+    const top=mk(new THREE.BoxGeometry(2.05,0.17,1.02),WOOD_A); top.position.y=0.92; g.add(top);
+    for(let i=0;i<4;i++){
+      const leg=mk(new THREE.BoxGeometry(0.15,0.9,0.15),WOOD_B);
+      leg.position.set(i<2?-0.85:0.85, 0.45, (i%2)?0.38:-0.38); g.add(leg);
+    }
+    if(!ghost){
+      const rack=mk(new THREE.BoxGeometry(1.95,0.55,0.09),WOOD_B);
+      rack.position.set(0,1.3,-0.44); g.add(rack);
+      const vice=mk(new THREE.BoxGeometry(0.3,0.24,0.32),0x8e8b82);
+      vice.position.set(0.78,1.12,0.1); g.add(vice);
+      const stock=mk(new THREE.BoxGeometry(0.08,0.5,0.08),0xb59a6c);
+      stock.position.set(-0.5,1.26,-0.4); stock.rotation.z=0.2; g.add(stock);
     }
   }
   else if(rec.t==='dr'){
@@ -1243,8 +1297,11 @@ function findPiece(t,gx,gz,lv,s){
 }
 function foundationAt(gx,gz,lv){ return findPiece('f',gx,gz,lv,0); }
 function wallOnSide(gx,gz,lv,sd){
-  return findPiece('w',gx,gz,lv,sd)||findPiece('d',gx,gz,lv,sd)||findPiece('dr',gx,gz,lv,sd);
+  return findPiece('w',gx,gz,lv,sd)||findPiece('d',gx,gz,lv,sd)||
+         findPiece('dr',gx,gz,lv,sd)||findPiece('rl',gx,gz,lv,sd);
 }
+// railings are waist high; everything else on a side is full storey
+function pieceTop(r){ return r.t==='rl' ? 1.05 : L; }
 function columnBase(gx,gz){
   const f0=foundationAt(gx,gz,0); return f0?f0.y:null;
 }
@@ -1343,7 +1400,7 @@ function ghostRecord(){
 
     rec.gx=gx; rec.gz=gz; rec.lv=lv; rec.y=f.y;
 
-    if(p.id==='w'||p.id==='d'||p.id==='dr'||p.id==='st'){
+    if(p.id==='w'||p.id==='d'||p.id==='dr'||p.id==='st'||p.id==='rl'){
       const dx=aimPt.x-cx, dz=aimPt.z-cz;
       const auto = Math.abs(dx)>Math.abs(dz) ? (dx>0?0:2) : (dz>0?1:3);
       rec.s=(auto+S.pieceRot)&3;            // Turn overrides the auto side
@@ -1421,8 +1478,9 @@ function surfaceY(x,z,feetY){
 }
 /* --- push the player out of walls --- */
 // true when this piece lets a body pass at that point (open doorway / open door)
+// A Window is a hole you can see and shoot through, not walk through.
 function passable(r,along,feetY){
-  if(r.t!=='d' && !(r.t==='dr' && r.op)) return false;
+  if(!(r.t==='dr' && r.op)) return false;
   return Math.abs(along)<0.85 && feetY < r.y+2.0;
 }
 // first blocking piece overlapping a circle — beasts test moves with this
@@ -1430,8 +1488,8 @@ function wallAt(x,z,feetY,radius){
   let hitId=null;
   S.builds.forEach((r,id)=>{
     if(hitId) return;
-    if(r.t!=='w'&&r.t!=='d'&&r.t!=='p'&&r.t!=='dr') return;
-    if(feetY > r.y+L-0.15 || feetY+1.2 < r.y+0.1) return;
+    if(r.t!=='w'&&r.t!=='d'&&r.t!=='p'&&r.t!=='dr'&&r.t!=='rl') return;
+    if(feetY > r.y+pieceTop(r)-0.15 || feetY+1.2 < r.y+0.1) return;
     const cx=r.gx*C, cz=r.gz*C;
     if(r.t==='p'){
       const px=cx+(r.s===0||r.s===3?C/2:-C/2), pz=cz+(r.s<2?C/2:-C/2);
@@ -1457,10 +1515,44 @@ function wallBetween(ax,az,ay,bx,bz){
   }
   return false;
 }
+// projectile occlusion: exact point test, and a Window is an opening
+function shotBlocked(x,y,z){
+  let id=null;
+  S.builds.forEach((r,k)=>{
+    if(id) return;
+    const cx=r.gx*C, cz=r.gz*C;
+    if(r.t==='f'){
+      if(Math.abs(x-cx)<C/2&&Math.abs(z-cz)<C/2&&y<r.y&&y>r.y-0.4) id=k;
+      return;
+    }
+    if(r.t==='r'){
+      if(Math.abs(x-cx)<C/2&&Math.abs(z-cz)<C/2&&Math.abs(y-(r.y+L+0.15))<0.25) id=k;
+      return;
+    }
+    if(r.t!=='w'&&r.t!=='d'&&r.t!=='dr'&&r.t!=='p'&&r.t!=='rl') return;
+    const ly=y-r.y;
+    if(ly<0||ly>pieceTop(r)) return;
+    if(r.t==='p'){
+      const px=cx+(r.s===0||r.s===3?C/2:-C/2), pz=cz+(r.s<2?C/2:-C/2);
+      if(Math.hypot(x-px,z-pz)<0.3) id=k;
+      return;
+    }
+    const off=sideOffset(r.s), wx=cx+off[0], wz=cz+off[1];
+    const alongX=(r.s===1||r.s===3);
+    const along=alongX?x-wx:z-wz, perp=alongX?z-wz:x-wx;
+    if(Math.abs(along)>C/2||Math.abs(perp)>0.2) return;
+    if(r.t==='d'  && Math.abs(along)<0.9  && ly>1.1 && ly<2.2) return;   // through the window
+    if(r.t==='dr' && r.op && Math.abs(along)<0.85 && ly<2.1) return;     // through the open door
+    if(r.t==='rl' && ly>0.62 && ly<0.95) return;                          // between the rails
+    id=k;
+  });
+  return id;
+}
+
 function resolveWalls(pos,radius,feetY){
   S.builds.forEach(r=>{
-    if(r.t!=='w'&&r.t!=='d'&&r.t!=='p'&&r.t!=='dr') return;
-    if(feetY > r.y+L-0.15 || feetY+1.6 < r.y+0.1) return;
+    if(r.t!=='w'&&r.t!=='d'&&r.t!=='p'&&r.t!=='dr'&&r.t!=='rl') return;
+    if(feetY > r.y+pieceTop(r)-0.15 || feetY+1.6 < r.y+0.1) return;
     const cx=r.gx*C, cz=r.gz*C;
     if(r.t==='p'){
       const px=cx+(r.s===0||r.s===3?C/2:-C/2), pz=cz+(r.s<2?C/2:-C/2);
@@ -1482,10 +1574,34 @@ function resolveWalls(pos,radius,feetY){
     }
   });
 }
+const raidDirty=new Set();
 function damagePiece(id,dmg){
   const r=S.builds.get(id); if(!r) return;
   r.hp-=dmg;
-  if(r.hp<=0){ removePiece(id,true); toast('Structure broken'); pushFort(); }
+  if(mine(r)) pushFort(); else raidDirty.add(r.o);
+  if(r.hp<=0){
+    S.broken.add(id);
+    removePiece(id,true);
+    toast(r.t==='dr'?'The door gives way':'Structure broken');
+    if(mine(r)) pushFort(); else raidDirty.add(r.o);
+  }
+}
+// rewrite somebody else's derelict fort with the damage we have done to it
+async function pushRaidDamage(){
+  for(const owner of Array.from(raidDirty)){
+    raidDirty.delete(owner);
+    const rest=[]; let der=0, ch=null;
+    S.builds.forEach(r=>{
+      if(r.o!==owner) return;
+      der=der||r.derelictTs||0; ch=ch||r.char||null;
+      rest.push({t:r.t,gx:r.gx,gz:r.gz,lv:r.lv,s:r.s,y:r.y,hp:r.hp,op:r.op||0});
+    });
+    try{
+      if(rest.length) await Net.set(K.fort(owner),
+        {o:owner,char:ch,ts:now(),derelict:der||now(),pieces:rest});
+      else await Net.del(K.fort(owner));
+    }catch(e){}
+  }
 }
 
 /* ============================================================
@@ -2091,6 +2207,82 @@ function updateCamera(dt){
 }
 
 /* ============================================================
+   ARROWS
+   ============================================================ */
+const ARROWS=[];
+function makeArrowMesh(){
+  const g=new THREE.Group();
+  const shaft=new THREE.Mesh(Cyl(0.015,0.015,0.72,4),toon(0xb59a6c));
+  shaft.rotation.x=Math.PI/2; addOutline(shaft,1.22); g.add(shaft);
+  const tip=new THREE.Mesh(Cone(0.034,0.13,4),toon(0xdcd5c2));
+  tip.rotation.x=-Math.PI/2; tip.position.z=-0.42; addOutline(tip,1.2); g.add(tip);
+  for(let i=0;i<2;i++){
+    const fl=new THREE.Mesh(new THREE.PlaneGeometry(0.1,0.17),
+      new THREE.MeshBasicMaterial({color:0xc1502e,side:THREE.DoubleSide}));
+    fl.position.z=0.3; fl.rotation.z=i?Math.PI/2:0; g.add(fl);
+  }
+  return g;
+}
+function fireArrow(t){
+  if(have('arrow')<=0){ toast('Quiver empty'); return; }
+  S.inv.arrow--; refreshHotbar();
+  const dir=aimDir();
+  const org=aimOrigin().addScaledVector(dir,0.7);
+  const a={mesh:makeArrowMesh(), pos:org, vel:dir.clone().multiplyScalar(t.muzzle||54),
+           dmg:t.projDmg||46, t:0, stuck:false};
+  a.mesh.position.copy(a.pos); scene.add(a.mesh); ARROWS.push(a);
+}
+function updateArrows(dt){
+  for(let i=ARROWS.length-1;i>=0;i--){
+    const a=ARROWS[i]; a.t+=dt;
+    if(a.stuck){ if(a.t>14){ scene.remove(a.mesh); ARROWS.splice(i,1); } continue; }
+    if(a.t>7){ scene.remove(a.mesh); ARROWS.splice(i,1); continue; }
+    let done=false;
+    const STEPS=4;
+    for(let k=0;k<STEPS && !done;k++){
+      a.vel.y-=11*dt/STEPS;
+      a.pos.addScaledVector(a.vel,dt/STEPS);
+
+      for(const an of ANIMALS){
+        if(!an.alive) continue;
+        if(Math.hypot(an.pos.x-a.pos.x,an.pos.z-a.pos.z)<0.8 &&
+           a.pos.y>an.pos.y-0.1 && a.pos.y<an.pos.y+1.8){
+          an.hp-=a.dmg; an.hurt=2.4; an.state='chase'; flashHit(an);
+          if(hostId && hostId!==S.pid && !rtcSendTo(hostId,{t:'a',a:an.id,d:a.dmg},true))
+            queueAHit(an.id,a.dmg);
+          if(an.hp<=0) killAnimal(an);
+          toast('Arrow strikes the '+BEAST[an.type].name.toLowerCase());
+          done=true; break;
+        }
+      }
+      if(done) break;
+
+      if(insideAnyZone(a.pos.x,a.pos.z)){
+        for(const [pid,pr] of S.peers){
+          if(!pr.alive||(pr.team&&pr.team===S.team)) continue;
+          if(!insideAnyZone(pr.x,pr.z)) continue;
+          if(Math.hypot(pr.x-a.pos.x,pr.z-a.pos.z)<0.7 &&
+             a.pos.y>pr.y && a.pos.y<pr.y+2.0){
+            if(!rtcSendTo(pid,{t:'h',d:a.dmg},true)) queueHit(pid,a.dmg);
+            toast('Arrow finds '+(pr.name||'a castaway'));
+            done=true; break;
+          }
+        }
+      }
+      if(done) break;
+
+      if(shotBlocked(a.pos.x,a.pos.y,a.pos.z)){ a.stuck=true; a.t=0; break; }
+      const gh=heightAt(a.pos.x,a.pos.z);
+      if(a.pos.y<=gh){ a.pos.y=gh+0.02; a.stuck=true; a.t=0; break; }
+      if(Math.hypot(a.pos.x,a.pos.z)>CFG.WORLD*0.5){ done=true; break; }
+    }
+    if(done){ scene.remove(a.mesh); ARROWS.splice(i,1); continue; }
+    a.mesh.position.copy(a.pos);
+    if(!a.stuck) a.mesh.lookAt(a.pos.clone().add(a.vel));
+  }
+}
+
+/* ============================================================
    ACTIONS
    ============================================================ */
 function aimDir(){ return AIM.dir.clone(); }
@@ -2108,6 +2300,7 @@ function doStrike(){
   const t=TOOLS[S.equipped]||TOOLS.hands;
   if(S.swing>0.35) return;
   S.swing=1;
+  if(t.ranged){ fireArrow(t); return; }
   const org=aimOrigin(), dir=aimDir();
   const reach=t.reach+0.6, cosLim=0.55;
 
@@ -2286,6 +2479,14 @@ function hurtPlayer(dmg,why){
   S.hp-=dmg; S.hurtFlash=1;
   if(S.hp<=0){ S.hp=0; die(why); }
 }
+function nearBench(){
+  let f=false;
+  S.builds.forEach(r=>{
+    if(r.t!=='wb') return;
+    if(Math.hypot(r.gx*C-S.pos.x,r.gz*C-S.pos.z)<4.2 && Math.abs(S.pos.y-r.y)<L) f=true;
+  });
+  return f;
+}
 function nearFire(){
   let f=false;
   S.builds.forEach(r=>{ if(r.t==='fi' && Math.hypot(r.gx*C-S.pos.x,r.gz*C-S.pos.z)<6) f=true; });
@@ -2314,7 +2515,7 @@ function consume(id){
 /* ============================================================
    UI
    ============================================================ */
-const HOT=['hands','axe','pick','spear','torch','cooked','coco','bandage'];
+const HOT=['hands','axe','pick','spear','bow','torch','cooked','coco','bandage'];
 function refreshHotbar(){
   const bar=$('hotbar');
   if(bar.children.length!==HOT.length){
@@ -2332,7 +2533,8 @@ function refreshHotbar(){
     const owned = id==='hands' ? 1 : have(id);
     el.querySelector('.ic').textContent = isTool?TOOLS[id].ic:(ITEMS[id]?ITEMS[id].ic:'🩹');
     el.querySelector('.nm').textContent = isTool?TOOLS[id].n:(ITEMS[id]?ITEMS[id].n.split(' ')[0]:'Bandage');
-    el.querySelector('.ct').textContent = (id==='hands')?'':(owned||'');
+    el.querySelector('.ct').textContent =
+      id==='hands' ? '' : (id==='bow' ? (owned?have('arrow'):'') : (owned||''));
     el.style.opacity = owned?1:0.32;
     el.classList.toggle('on', S.hotIdx===i);
   });
@@ -2349,18 +2551,22 @@ function selectHot(i){
 function renderCraft(){
   const box=$('craftrows'); if(!box) return;
   box.innerHTML='';
+  const bench=nearBench();
   for(const r of RECIPES){
-    const ok=canPay(r.cost);
+    const ok=canPay(r.cost) && (!r.bench || bench);
     const costTxt=Object.keys(r.cost).map(k=>{
       const enough=have(k)>=r.cost[k];
       return '<b class="'+(enough?'':'no')+'">'+r.cost[k]+'× '+(ITEMS[k]?ITEMS[k].n:k)+'</b>';
     }).join(' · ');
     const row=document.createElement('div'); row.className='row';
-    row.innerHTML='<div class="g"><div class="t">'+r.name+'</div><div class="c">'+costTxt+
+    row.innerHTML='<div class="g"><div class="t">'+r.name+
+      (r.bench&&!bench?' <span style="color:#c1502e;font-size:9px">· NEEDS A WORKBENCH</span>':'')+
+      '</div><div class="c">'+costTxt+
       '</div><div class="c" style="color:#5e6f77">'+r.desc+'</div></div>';
     const b=document.createElement('button'); b.textContent='Make'; b.disabled=!ok;
     b.addEventListener('click',()=>{
       if(!canPay(r.cost)) return;
+      if(r.bench && !nearBench()){ toast('You need to stand at a workbench'); return; }
       pay(r.cost);
       for(const k in r.give) add(k,r.give[k]);
       toast(r.name+' made');
@@ -2894,18 +3100,27 @@ async function slowSync(){
   // pull all forts
   const items=await Net.scan(K.fPre());
   S.fortLoaded=true;      // only now is it safe to write ours back
+  await pushRaidDamage();
   const keepIds=new Set();
   for(const it of items){
     const f=it.value; if(!f||!f.pieces) continue;
     if(f.derelict && now()-f.derelict>CFG.DERELICT_MS){ await Net.del(it.key); continue; }
     const isMine = !f.derelict && f.o===ME();
     for(const p of f.pieces){
-      const rec=Object.assign({},p,{o:f.o,char:f.char,derelict:!!f.derelict});
+      const rec=Object.assign({},p,{o:f.o,char:f.char,
+        derelict:!!f.derelict, derelictTs:f.derelict||0});
       const id=pieceId(rec);
+      if(S.broken.has(id)) continue;        // we smashed it; do not resurrect it
       keepIds.add(id);
       if(!S.builds.has(id)) addPiece(rec,true);
-      else { const cur=S.builds.get(id); cur.derelict=!!f.derelict;
-             if(!isMine){ cur.hp=p.hp; if(cur.op!==p.op){ cur.op=p.op; refreshDoor(id); } } }
+      else{
+        const cur=S.builds.get(id);
+        cur.derelict=!!f.derelict; cur.derelictTs=f.derelict||0; cur.char=f.char;
+        if(!isMine){
+          cur.hp=Math.min(cur.hp,p.hp);     // damage only ever goes down
+          if(cur.op!==p.op){ cur.op=p.op; refreshDoor(id); }
+        }
+      }
     }
     if(f.derelict) tintDerelict(f.o);
   }
@@ -3037,6 +3252,7 @@ function frame(time){
     safe('camera',()=>updateCamera(dt));
     if(S.phase==='play') safe('survival',()=>survivalTick(dt));
     safe('beasts',()=>updateAnimals(dt));
+    safe('arrows',()=>updateArrows(dt));
     safe('peers', ()=>updatePeers(dt));
     safe('ghost', ()=>updateGhost());
     safe('hud',   ()=>updateHUD());
@@ -3145,6 +3361,7 @@ function resetRunState(){
   S.hp=100; S.food=100; S.water=100; S.stam=100;
   S.inv={wood:0,fiber:0,stone:0}; S.equipped='hands'; S.hotIdx=0;
   S.kills=0; S.built=0; S.day=1; S.tod=0.27;
+  S.broken=new Set();
   S.buildMode=false; $('buildbar').style.display='none'; $('s_build').classList.remove('on');
   // clear my own fort remnants from the last life
   Array.from(S.builds.keys()).forEach(id=>{ const r=S.builds.get(id); if(mine(r)) removePiece(id); });
