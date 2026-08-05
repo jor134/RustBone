@@ -1017,32 +1017,121 @@ function pay(cost){ for(const k in cost) S.inv[k]-=cost[k]; refreshHotbar(); }
    ============================================================ */
 function makeAvatar(tint,accent){
   const g=new THREE.Group();
-  const skin=toon(tint||0xd7a87e);
+  const base=new THREE.Color(tint||0xd7a87e);
+  const skin =toon(base.getHex());
+  const skinD=toon(base.clone().multiplyScalar(0.84).getHex());
   const cloth=toon(accent||0x9c5a3c);
-  const torso=new THREE.Mesh(Cyl(0.34,0.28,0.86,7),cloth);
-  torso.position.y=1.16; addOutline(torso,1.06); g.add(torso);
-  const head=new THREE.Mesh(Ico(0.28,1),skin);
-  head.position.y=1.78; addOutline(head,1.08); g.add(head);
-  const hair=new THREE.Mesh(Sph(0.3,8,6,0,6.283,0,1.1),toon(0x3a2a1e));
-  hair.position.y=1.80; g.add(hair);
-  const hips=new THREE.Mesh(Cyl(0.28,0.24,0.34,7),toon(0x50412f));
-  hips.position.y=0.62; addOutline(hips,1.06); g.add(hips);
-  const legs=[],arms=[];
-  for(let i=0;i<2;i++){
-    const s=i?1:-1;
-    const leg=new THREE.Mesh(Cyl(0.12,0.1,0.62,6),skin);
-    leg.position.set(s*0.14,0.31,0); addOutline(leg,1.09); g.add(leg); legs.push(leg);
-    const armPivot=new THREE.Group(); armPivot.position.set(s*0.4,1.5,0); g.add(armPivot);
-    const arm=new THREE.Mesh(Cyl(0.1,0.09,0.7,6),skin);
-    arm.position.y=-0.35; addOutline(arm,1.1); armPivot.add(arm); arms.push(armPivot);
+  const clothD=toon(new THREE.Color(accent||0x9c5a3c).multiplyScalar(0.72).getHex());
+  const leather=toon(0x50412f);
+  const hairM=toon(0x3a2a1e);
+  const eyeM =toon(0x141418);
+
+  // ---- torso stack (front is -Z, matching camera forward) ----
+  const torso=new THREE.Group(); torso.position.y=0.88; g.add(torso);
+
+  const pelvis=new THREE.Mesh(Cyl(0.235,0.2,0.24,9),leather);
+  pelvis.position.y=0.02; addOutline(pelvis,1.05); torso.add(pelvis);
+
+  const waist=new THREE.Mesh(Cyl(0.215,0.25,0.26,9),cloth);
+  waist.position.y=0.26; torso.add(waist);
+
+  const chest=new THREE.Mesh(Cyl(0.25,0.295,0.36,9),cloth);
+  chest.position.y=0.56; addOutline(chest,1.05); torso.add(chest);
+
+  const back=new THREE.Mesh(new THREE.BoxGeometry(0.42,0.3,0.13),clothD);
+  back.position.set(0,0.58,0.2); torso.add(back);
+
+  const sash=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.5,0.42),leather);
+  sash.position.set(0.08,0.5,0); sash.rotation.z=0.22; torso.add(sash);
+
+  const buckle=new THREE.Mesh(new THREE.BoxGeometry(0.11,0.09,0.06),toon(0x9a9890));
+  buckle.position.set(0,0.14,-0.2); torso.add(buckle);
+
+  const pouch=new THREE.Mesh(new THREE.BoxGeometry(0.19,0.16,0.12),leather);
+  pouch.position.set(-0.24,0.1,0.06); addOutline(pouch,1.07); torso.add(pouch);
+
+  for(let i=-1;i<=1;i+=2){
+    const shoulder=new THREE.Mesh(Ico(0.115,1),cloth);
+    shoulder.position.set(i*0.29,0.66,0); torso.add(shoulder);
   }
-  // tool socket at the end of the right arm
-  const hand=new THREE.Group(); hand.position.set(0,-0.72,0.06); arms[1].add(hand);
-  // blob shadow
-  const sh=new THREE.Mesh(new THREE.CircleGeometry(0.45,14),
+
+  // ---- head ----
+  const head=new THREE.Group(); head.position.y=0.82; torso.add(head);
+  const neck=new THREE.Mesh(Cyl(0.082,0.095,0.13,8),skinD);
+  neck.position.y=-0.02; head.add(neck);
+
+  const skull=new THREE.Mesh(Ico(0.2,2),skin);
+  skull.scale.set(0.94,1.08,1.0); skull.position.y=0.16;
+  addOutline(skull,1.06); head.add(skull);
+
+  const jaw=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.11,0.19),skin);
+  jaw.position.set(0,0.06,-0.045); head.add(jaw);
+  const chin=new THREE.Mesh(Ico(0.05,1),skin);
+  chin.position.set(0,0.035,-0.13); head.add(chin);
+
+  const brow=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.032,0.05),skinD);
+  brow.position.set(0,0.215,-0.165); head.add(brow);
+  const nose=new THREE.Mesh(Cone(0.037,0.09,4),skin);
+  nose.rotation.x=-Math.PI/2; nose.position.set(0,0.155,-0.185); head.add(nose);
+
+  for(let i=-1;i<=1;i+=2){
+    const eye=new THREE.Mesh(Ico(0.028,1),eyeM);
+    eye.position.set(i*0.075,0.18,-0.163); head.add(eye);
+    const ear=new THREE.Mesh(Ico(0.045,1),skinD);
+    ear.scale.set(0.5,1,0.8); ear.position.set(i*0.185,0.15,0.01); head.add(ear);
+  }
+
+  const cap=new THREE.Mesh(Sph(0.212,10,7,0,6.283,0,1.25),hairM);
+  cap.position.y=0.165; cap.rotation.x=-0.16; head.add(cap);
+  const tuft=new THREE.Mesh(Cone(0.11,0.2,5),hairM);
+  tuft.position.set(0,0.33,0.03); tuft.rotation.x=0.4; head.add(tuft);
+  const tail=new THREE.Mesh(Cyl(0.05,0.025,0.24,5),hairM);
+  tail.position.set(0,0.2,0.19); tail.rotation.x=0.75; head.add(tail);
+  const beard=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.09,0.13),hairM);
+  beard.position.set(0,0.025,-0.07); head.add(beard);
+
+  // ---- limbs: two segments plus a joint, so they read as limbs ----
+  function leg(sx){
+    const hip=new THREE.Group(); hip.position.set(sx*0.125,-0.02,0); torso.add(hip);
+    const thigh=new THREE.Mesh(Cyl(0.098,0.082,0.42,8),clothD);
+    thigh.position.y=-0.21; addOutline(thigh,1.07); hip.add(thigh);
+    const knee=new THREE.Group(); knee.position.y=-0.42; hip.add(knee);
+    const kneeCap=new THREE.Mesh(Ico(0.078,1),skinD); knee.add(kneeCap);
+    const shin=new THREE.Mesh(Cyl(0.072,0.058,0.4,8),skin);
+    shin.position.y=-0.2; addOutline(shin,1.08); knee.add(shin);
+    const foot=new THREE.Mesh(new THREE.BoxGeometry(0.115,0.075,0.24),leather);
+    foot.position.set(0,-0.42,-0.05); addOutline(foot,1.07); knee.add(foot);
+    return {hip,knee};
+  }
+  function arm(sx){
+    const sh=new THREE.Group(); sh.position.set(sx*0.3,0.62,0); torso.add(sh);
+    const upper=new THREE.Mesh(Cyl(0.075,0.062,0.32,8),cloth);
+    upper.position.y=-0.16; addOutline(upper,1.08); sh.add(upper);
+    const el=new THREE.Group(); el.position.y=-0.32; sh.add(el);
+    const elbow=new THREE.Mesh(Ico(0.062,1),skin); el.add(elbow);
+    const fore=new THREE.Mesh(Cyl(0.058,0.048,0.3,8),skin);
+    fore.position.y=-0.15; addOutline(fore,1.09); el.add(fore);
+    const wrap=new THREE.Mesh(Cyl(0.062,0.058,0.07,8),leather);
+    wrap.position.y=-0.27; el.add(wrap);
+    const fist=new THREE.Mesh(Ico(0.058,1),skin);
+    fist.position.y=-0.33; addOutline(fist,1.1); el.add(fist);
+    const thumb=new THREE.Mesh(Cyl(0.019,0.016,0.07,5),skin);
+    thumb.position.set(sx*0.04,-0.31,-0.03); thumb.rotation.z=-sx*0.5; el.add(thumb);
+    return {sh,el,fist};
+  }
+  const legL=leg(-1), legR=leg(1);
+  const armL=arm(-1), armR=arm(1);
+
+  const hand=new THREE.Group(); hand.position.set(0,-0.35,-0.02); armR.el.add(hand);
+
+  const sh=new THREE.Mesh(new THREE.CircleGeometry(0.42,16),
     new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.26,depthWrite:false}));
-  sh.rotation.x=-Math.PI/2; sh.position.y=0.03; g.add(sh);
-  g.userData={legs,arms,hand:hand,tool:null,toolId:null,shadow:sh,walk:0,swing:0};
+  sh.rotation.x=-Math.PI/2; sh.position.y=0.02; g.add(sh);
+
+  g.userData={torso,head,
+    hipL:legL.hip,kneeL:legL.knee,hipR:legR.hip,kneeR:legR.knee,
+    shL:armL.sh,elL:armL.el,shR:armR.sh,elR:armR.el,
+    hand:hand,tool:null,toolId:null,shadow:sh,walk:0};
   return g;
 }
 
@@ -1115,16 +1204,35 @@ function flickerTool(av,t,seed){
   u.tool.userData.core.scale.set(k,k,k);
 }
 function animateAvatar(av,speed,dt,swing){
-  const u=av.userData; u.walk+=dt*speed*2.6;
-  const a=Math.sin(u.walk)*clamp(speed*0.22,0,0.7);
-  u.legs[0].rotation.x=a; u.legs[1].rotation.x=-a;
+  const u=av.userData;
+  if(!u.hipL) return;
+  const sp=clamp(speed,0,10);
+  u.walk+=dt*sp*2.25;
+  const amp=clamp(sp*0.185,0,0.72);
+  const a=Math.sin(u.walk)*amp;
+  const bendL=Math.max(0,-Math.cos(u.walk))*amp*1.0;
+  const bendR=Math.max(0, Math.cos(u.walk))*amp*1.0;
+
+  u.hipL.rotation.x=a;   u.kneeL.rotation.x=-bendL;
+  u.hipR.rotation.x=-a;  u.kneeR.rotation.x=-bendR;
+
+  u.torso.position.y=0.88+Math.abs(Math.sin(u.walk))*amp*0.045;
+  u.torso.rotation.y=Math.sin(u.walk)*amp*0.13;
+  u.torso.rotation.x=clamp(sp*0.013,0,0.14);
+  u.head.rotation.y=Math.sin(u.walk*0.5)*0.07;
+  u.head.rotation.x=-u.torso.rotation.x*0.7;
+
+  u.shL.rotation.x=a*0.8;
+  u.elL.rotation.x=-0.22-Math.max(0,a)*0.35;
   if(swing>0){
-    const p=1-swing;
-    u.arms[1].rotation.x=-2.2+Math.sin(p*Math.PI)*2.6;
+    const q=1-swing, arc=Math.sin(q*Math.PI);
+    u.shR.rotation.x=-1.95+arc*2.75;
+    u.elR.rotation.x=-1.0+arc*0.95;
+    u.torso.rotation.y+=arc*0.22;
   }else{
-    u.arms[1].rotation.x=-a*0.8;
+    u.shR.rotation.x=lerp(u.shR.rotation.x,-a*0.8,clamp(dt*11,0,1));
+    u.elR.rotation.x=lerp(u.elR.rotation.x,-0.22-Math.max(0,-a)*0.35,clamp(dt*11,0,1));
   }
-  u.arms[0].rotation.x=a*0.8;
 }
 
 /* ============================================================
@@ -1782,60 +1890,161 @@ let hostId=null;
 
 function beastMesh(type){
   const g=new THREE.Group();
+  // every creature faces -Z, same convention as the player
   if(type==='boar'){
-    const hide=toon(0x5a4433);
-    const body=new THREE.Mesh(Ico(0.78,1),hide);
-    body.scale.set(1.35,0.92,0.9); body.position.y=0.85; addOutline(body,1.06); g.add(body);
-    const head=new THREE.Mesh(Cone(0.44,0.95,6),hide);
-    head.rotation.z=-Math.PI/2; head.position.set(1.15,0.82,0); addOutline(head,1.07); g.add(head);
-    for(let i=0;i<2;i++){
-      const tk=new THREE.Mesh(Cone(0.07,0.36,4),toon(0xe4dcc6));
-      tk.position.set(1.5,0.66,i?0.16:-0.16); tk.rotation.z=-1.1; g.add(tk);
+    const hide=toon(0x5a4433), hideD=toon(0x453325), bone=toon(0xe4dcc6);
+    const body=new THREE.Mesh(Ico(0.72,2),hide);
+    body.scale.set(0.86,0.94,1.38); body.position.set(0,0.86,0.1);
+    addOutline(body,1.05); g.add(body);
+    const rump=new THREE.Mesh(Ico(0.5,1),hide);
+    rump.scale.set(0.95,0.95,0.9); rump.position.set(0,0.9,0.82); g.add(rump);
+    const shoulders=new THREE.Mesh(Ico(0.52,1),hideD);
+    shoulders.scale.set(1.02,1.1,0.8); shoulders.position.set(0,0.98,-0.5); g.add(shoulders);
+    // bristle ridge
+    for(let i=0;i<6;i++){
+      const br=new THREE.Mesh(Cone(0.055,0.26,4),toon(0x2f2318));
+      br.position.set(0,1.42-i*0.03,-0.55+i*0.28); br.rotation.x=-0.25; g.add(br);
     }
+    const neck=new THREE.Mesh(Cyl(0.34,0.42,0.3,8),hideD);
+    neck.rotation.x=Math.PI/2; neck.position.set(0,0.9,-0.82); g.add(neck);
+    const head=new THREE.Mesh(Ico(0.34,1),hide);
+    head.scale.set(0.85,0.88,1.15); head.position.set(0,0.85,-1.1);
+    addOutline(head,1.06); g.add(head);
+    const snout=new THREE.Mesh(Cyl(0.15,0.2,0.34,7),hideD);
+    snout.rotation.x=Math.PI/2; snout.position.set(0,0.76,-1.42); g.add(snout);
+    const disc=new THREE.Mesh(Cyl(0.15,0.15,0.04,7),toon(0x7a5a4a));
+    disc.rotation.x=Math.PI/2; disc.position.set(0,0.76,-1.6); g.add(disc);
+    for(let i=-1;i<=1;i+=2){
+      const tk=new THREE.Mesh(Cone(0.05,0.3,4),bone);
+      tk.position.set(i*0.14,0.74,-1.44); tk.rotation.set(-0.5,0,i*0.35); g.add(tk);
+      const ear=new THREE.Mesh(Cone(0.12,0.24,4),hideD);
+      ear.position.set(i*0.24,1.06,-0.99); ear.rotation.set(-0.3,0,i*0.5); g.add(ear);
+      const eye=new THREE.Mesh(Ico(0.045,1),toon(0x141418));
+      eye.position.set(i*0.2,0.96,-1.25); g.add(eye);
+    }
+    const tail=new THREE.Mesh(Cyl(0.04,0.02,0.4,5),hideD);
+    tail.position.set(0,1.05,1.1); tail.rotation.x=-0.7; g.add(tail);
+    // jointed legs
     for(let i=0;i<4;i++){
-      const lg=new THREE.Mesh(Cyl(0.11,0.09,0.62,5),toon(0x3d2f24));
-      lg.position.set(i<2?0.6:-0.6, 0.31, (i%2)?0.34:-0.34); addOutline(lg,1.1); g.add(lg);
-      if(i<2) g.userData['fl'+i]=lg; else g.userData['bl'+(i-2)]=lg;
-    }
-  } else if(type==='stalker'){
-    const skin=toon(0x4d6b52);
-    const body=new THREE.Mesh(Ico(0.6,1),skin);
-    body.scale.set(1.5,0.85,0.8); body.position.y=1.05; addOutline(body,1.07); g.add(body);
-    const neck=new THREE.Mesh(Cyl(0.16,0.24,0.8,5),skin);
-    neck.position.set(0.75,1.4,0); neck.rotation.z=-0.6; addOutline(neck,1.1); g.add(neck);
-    const head=new THREE.Mesh(Cone(0.26,0.78,5),skin);
-    head.rotation.z=-Math.PI/2; head.position.set(1.28,1.62,0); addOutline(head,1.09); g.add(head);
-    const jaw=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.08,0.2),toon(0xe4dcc6));
-    jaw.position.set(1.4,1.48,0); g.add(jaw);
-    const tail=new THREE.Mesh(Cone(0.22,1.7,5),skin);
-    tail.rotation.z=Math.PI/2; tail.position.set(-1.2,1.05,0); addOutline(tail,1.09); g.add(tail);
-    for(let i=0;i<2;i++){
-      const lg=new THREE.Mesh(Cyl(0.13,0.1,0.95,5),skin);
-      lg.position.set(0.1,0.48,i?0.3:-0.3); addOutline(lg,1.1); g.add(lg);
-      g.userData['fl'+i]=lg;
-    }
-    const crest=new THREE.Mesh(Cone(0.16,0.5,4),toon(0xc1502e));
-    crest.position.set(1.05,1.9,0); g.add(crest);
-  } else {
-    const sh=toon(0xb1502f);
-    const body=new THREE.Mesh(Sph(0.5,8,6),sh);
-    body.scale.set(1.25,0.6,1); body.position.y=0.42; addOutline(body,1.08); g.add(body);
-    for(let i=0;i<2;i++){
-      const cl=new THREE.Mesh(new THREE.BoxGeometry(0.36,0.2,0.24),sh);
-      cl.position.set(0.62,0.34,i?0.36:-0.36); addOutline(cl,1.1); g.add(cl);
-      g.userData['fl'+i]=cl;
-    }
-    for(let i=0;i<4;i++){
-      const lg=new THREE.Mesh(Cyl(0.05,0.04,0.4,4),sh);
-      lg.position.set(-0.15+ (i<2?0.3:-0.1), 0.2, (i%2)?0.5:-0.5); lg.rotation.x=(i%2)?0.5:-0.5; g.add(lg);
+      const sx=(i%2)?1:-1, front=i<2;
+      const pv=new THREE.Group(); pv.position.set(sx*0.3,0.72,front?-0.5:0.62); g.add(pv);
+      const up=new THREE.Mesh(Cyl(0.105,0.082,0.4,7),hide);
+      up.position.y=-0.2; addOutline(up,1.08); pv.add(up);
+      const kn=new THREE.Group(); kn.position.y=-0.4; pv.add(kn);
+      const lo=new THREE.Mesh(Cyl(0.07,0.05,0.32,6),hideD);
+      lo.position.y=-0.16; kn.add(lo);
+      const hoof=new THREE.Mesh(Cyl(0.07,0.085,0.1,6),toon(0x241a12));
+      hoof.position.y=-0.34; kn.add(hoof);
+      g.userData[(front?'fl':'bl')+((i%2)?1:0)]=pv;
     }
   }
-  const sh2=new THREE.Mesh(new THREE.CircleGeometry(0.7,12),
+  else if(type==='stalker'){
+    const skin=toon(0x4d6b52), skinD=toon(0x3a5340), belly=toon(0x7f9668);
+    const bone=toon(0xe8e0cc), crestM=toon(0xc1502e);
+    const body=new THREE.Mesh(Ico(0.55,2),skin);
+    body.scale.set(0.82,0.95,1.5); body.position.set(0,1.02,0.1);
+    addOutline(body,1.06); g.add(body);
+    const und=new THREE.Mesh(Ico(0.4,1),belly);
+    und.scale.set(0.8,0.62,1.3); und.position.set(0,0.82,0.16); g.add(und);
+    const hips=new THREE.Mesh(Ico(0.44,1),skin);
+    hips.scale.set(1,1,0.85); hips.position.set(0,1.05,0.7); g.add(hips);
+    // tail in three tapering joints
+    let tz=1.0, tr=0.2, ty=1.06;
+    for(let i=0;i<3;i++){
+      const seg=new THREE.Mesh(Cyl(tr,tr*0.62,0.6,6),i%2?skinD:skin);
+      seg.rotation.x=Math.PI/2; seg.position.set(0,ty,tz+0.3);
+      addOutline(seg,1.08); g.add(seg);
+      tz+=0.58; tr*=0.62; ty-=0.06;
+    }
+    const neck=new THREE.Group(); neck.position.set(0,1.24,-0.5); g.add(neck);
+    for(let i=0;i<3;i++){
+      const seg=new THREE.Mesh(Cyl(0.15-i*0.02,0.13-i*0.02,0.26,7),skin);
+      seg.position.set(0,i*0.13,-i*0.2); seg.rotation.x=-0.9; neck.add(seg);
+    }
+    const head=new THREE.Mesh(Ico(0.19,1),skin);
+    head.scale.set(0.85,0.9,1.5); head.position.set(0,1.62,-1.06);
+    addOutline(head,1.08); g.add(head);
+    const jaw=new THREE.Mesh(new THREE.BoxGeometry(0.19,0.07,0.36),skinD);
+    jaw.position.set(0,1.5,-1.14); g.add(jaw);
+    for(let i=0;i<5;i++){
+      const th=new THREE.Mesh(Cone(0.022,0.075,3),bone);
+      th.rotation.x=Math.PI; th.position.set(i%2?0.07:-0.07,1.54,-0.98-i*0.09); g.add(th);
+    }
+    for(let i=-1;i<=1;i+=2){
+      const eye=new THREE.Mesh(Ico(0.048,1),toon(0xf2c14a));
+      eye.position.set(i*0.11,1.71,-1.0); g.add(eye);
+      const pup=new THREE.Mesh(Ico(0.022,0),toon(0x141418));
+      pup.position.set(i*0.12,1.71,-1.04); g.add(pup);
+    }
+    for(let i=0;i<4;i++){
+      const cr=new THREE.Mesh(Cone(0.05,0.2-i*0.03,4),crestM);
+      cr.position.set(0,1.78-i*0.02,-0.92+i*0.16); cr.rotation.x=0.3; g.add(cr);
+    }
+    // digitigrade legs
+    for(let i=0;i<2;i++){
+      const sx=i?1:-1;
+      const pv=new THREE.Group(); pv.position.set(sx*0.28,1.0,0.12); g.add(pv);
+      const thigh=new THREE.Mesh(Cyl(0.15,0.1,0.46,7),skin);
+      thigh.position.y=-0.23; addOutline(thigh,1.08); pv.add(thigh);
+      const kn=new THREE.Group(); kn.position.y=-0.46; pv.add(kn);
+      const shin=new THREE.Mesh(Cyl(0.085,0.06,0.4,6),skinD);
+      shin.position.set(0,-0.2,-0.06); shin.rotation.x=0.25; kn.add(shin);
+      const foot=new THREE.Mesh(new THREE.BoxGeometry(0.13,0.07,0.3),skinD);
+      foot.position.set(0,-0.4,-0.16); addOutline(foot,1.09); kn.add(foot);
+      for(let c=-1;c<=1;c+=2){
+        const claw=new THREE.Mesh(Cone(0.028,0.11,3),bone);
+        claw.rotation.x=-Math.PI/2; claw.position.set(c*0.045,-0.4,-0.32); kn.add(claw);
+      }
+      g.userData['fl'+i]=pv;
+    }
+    for(let i=0;i<2;i++){
+      const sx=i?1:-1;
+      const pv=new THREE.Group(); pv.position.set(sx*0.24,1.02,-0.44); g.add(pv);
+      const up=new THREE.Mesh(Cyl(0.055,0.045,0.26,6),skin);
+      up.position.y=-0.13; up.rotation.x=-0.5; pv.add(up);
+      const cl=new THREE.Mesh(Cone(0.03,0.12,4),bone);
+      cl.position.set(0,-0.26,-0.1); cl.rotation.x=-1.4; pv.add(cl);
+      g.userData['bl'+i]=pv;
+    }
+  }
+  else{
+    const sh=toon(0xb1502f), shD=toon(0x8e3d22), bone=toon(0xe2d8c4);
+    const carapace=new THREE.Mesh(Ico(0.52,2),sh);
+    carapace.scale.set(1.25,0.5,1.0); carapace.position.y=0.42;
+    addOutline(carapace,1.06); g.add(carapace);
+    const ridge=new THREE.Mesh(Ico(0.34,1),shD);
+    ridge.scale.set(1.3,0.4,0.7); ridge.position.set(0,0.56,0.06); g.add(ridge);
+    for(let i=-1;i<=1;i+=2){
+      const stalk=new THREE.Mesh(Cyl(0.022,0.022,0.16,5),shD);
+      stalk.position.set(i*0.16,0.62,-0.3); stalk.rotation.x=-0.3; g.add(stalk);
+      const eye=new THREE.Mesh(Ico(0.045,1),toon(0x141418));
+      eye.position.set(i*0.16,0.71,-0.34); g.add(eye);
+      // jointed claw
+      const pv=new THREE.Group(); pv.position.set(i*0.42,0.36,-0.3); g.add(pv);
+      const upper=new THREE.Mesh(Cyl(0.06,0.05,0.28,6),sh);
+      upper.rotation.z=i*1.1; upper.position.set(i*0.1,0.02,-0.05); pv.add(upper);
+      const pinA=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.11,0.17),sh);
+      pinA.position.set(i*0.28,0.06,-0.18); addOutline(pinA,1.08); pv.add(pinA);
+      const pinB=new THREE.Mesh(new THREE.BoxGeometry(0.26,0.08,0.14),shD);
+      pinB.position.set(i*0.3,-0.05,-0.18); pinB.rotation.z=-i*0.2; pv.add(pinB);
+      const tipA=new THREE.Mesh(Cone(0.05,0.14,4),bone);
+      tipA.rotation.x=-Math.PI/2; tipA.position.set(i*0.42,0.07,-0.3); pv.add(tipA);
+      g.userData['fl'+(i>0?1:0)]=pv;
+    }
+    for(let i=0;i<8;i++){
+      const sx=i<4?-1:1, k=i%4;
+      const lg=new THREE.Mesh(Cyl(0.032,0.02,0.34,5),shD);
+      lg.position.set(sx*0.42,0.24,-0.12+k*0.19);
+      lg.rotation.set(0.2,0,sx*0.85); g.add(lg);
+      const tip=new THREE.Mesh(Cone(0.025,0.14,4),shD);
+      tip.position.set(sx*0.58,0.08,-0.12+k*0.19); tip.rotation.z=sx*0.3; g.add(tip);
+    }
+  }
+  const bs=new THREE.Mesh(new THREE.CircleGeometry(0.75,14),
     new THREE.MeshBasicMaterial({color:0,transparent:true,opacity:0.22,depthWrite:false}));
-  sh2.rotation.x=-Math.PI/2; sh2.position.y=0.03; g.add(sh2);
+  bs.rotation.x=-Math.PI/2; bs.position.y=0.03; g.add(bs);
   return g;
 }
-
 function spawnAnimal(type,x,z){
   const d=BEAST[type];
   const m=beastMesh(type);
@@ -1879,9 +2088,10 @@ function updateAnimals(dt){
       continue;
     }
     if(a.hurt>0) a.hurt-=dt;
+    a.mesh.visible = Math.hypot(a.pos.x-S.pos.x, a.pos.z-S.pos.z) < 105;
     if(!amHost){ // non-host: interpolate toward the host's transform
       a.mesh.position.lerp(a.pos,clamp(dt*7,0,1));
-      a.mesh.rotation.y = a.yaw;
+      a.mesh.rotation.y = a.yaw+Math.PI;
       continue;
     }
     a.cd-=dt; a.timer-=dt;
@@ -1983,7 +2193,7 @@ function updateAnimals(dt){
     }
     a.pos.y=heightAt(a.pos.x,a.pos.z);
     a.mesh.position.copy(a.pos);
-    a.mesh.rotation.y=a.yaw;
+    a.mesh.rotation.y=a.yaw+Math.PI;
     // gait
     const sw=Math.sin(a.gait)*0.5;
     if(a.mesh.userData.fl0) a.mesh.userData.fl0.rotation.x=sw;
@@ -1994,7 +2204,7 @@ function updateAnimals(dt){
   // respawn to keep the isle stocked
   if(amHost && Math.random()<dt*0.09){
     const alive=ANIMALS.filter(a=>a.alive).length;
-    if(alive<16){
+    if(alive<13){
       const types=['boar','stalker','crab'];
       const type=types[Math.floor(Math.random()*3)];
       let x,z,t=0;
@@ -2200,7 +2410,7 @@ function updatePlayer(dt){
   // avatar
   const spd=Math.hypot(S.vel.x,S.vel.z);
   selfAvatar.position.copy(S.pos);
-  selfAvatar.rotation.y = moving ? lerpAngle(selfAvatar.rotation.y, Math.atan2(S.vel.x,S.vel.z), clamp(dt*10,0,1))
+  selfAvatar.rotation.y = moving ? lerpAngle(selfAvatar.rotation.y, Math.atan2(-S.vel.x,-S.vel.z), clamp(dt*10,0,1))
                                  : lerpAngle(selfAvatar.rotation.y, S.yaw, clamp(dt*7,0,1));
   animateAvatar(selfAvatar,spd,dt,S.swing);
   selfAvatar.visible = (S.camMode===3 && !S.vr);
