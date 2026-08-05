@@ -56,6 +56,11 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 #best{font-size:10px;color:#6f8189;letter-spacing:.1em}
 
 /* ---------- HUD ---------- */
+#dmg{position:fixed;inset:0;z-index:15;pointer-events:none;opacity:0;
+  background:radial-gradient(ellipse at 50% 50%,
+    rgba(150,18,14,0) 26%, rgba(150,18,14,.34) 58%,
+    rgba(122,10,8,.78) 82%, rgba(84,4,4,.95) 100%);
+  transition:opacity .09s linear;will-change:opacity}
 #hud{position:fixed;inset:0;z-index:20;pointer-events:none;display:none;
   padding:calc(env(safe-area-inset-top) + 8px) 10px calc(env(safe-area-inset-bottom) + 8px)}
 /* gauge cluster */
@@ -203,6 +208,8 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
   <div id="netbadge">checking storage…</div>
   <div class="note">Your fort stands until you die. Die and it goes derelict — lootable by anyone for five minutes, then the tide takes it. Weapons only cut other castaways inside a marked salvage zone.</div>
 </div>
+
+<div id="dmg"></div>
 
 <div id="hud">
   <div id="gauges">
@@ -380,11 +387,12 @@ const Net = {
     this.mode='memory';
   },
 
-  async set(key,val){
+  async set(key,val,keepalive){
     const s = JSON.stringify(val);
     try{
       if(this.mode==='upstash'){
         await fetch('/api/kv',{method:'POST',headers:{'Content-Type':'application/json'},
+          keepalive:!!keepalive,
           body:JSON.stringify({op:'set',key,value:s,ttl:CFG.KEY_TTL})});
         return true;
       }
@@ -567,6 +575,83 @@ function instancedOutline(inst,t){
   return o;
 }
 
+let vmScene=null, vmCam=null, vmRoot=null, vmArmR=null, vmArmL=null, vmHand=null,
+    vmTool=null, vmToolId=null, vmWalk=0;
+function initViewModel(){
+  vmScene=new THREE.Scene();
+  vmCam=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.01,12);
+  vmScene.add(new THREE.HemisphereLight(0xdfeef2,0x3c4038,1.05));
+  const dl=new THREE.DirectionalLight(0xfff2d8,0.95); dl.position.set(0.7,1.2,0.8);
+  vmScene.add(dl);
+  vmRoot=new THREE.Group(); vmScene.add(vmRoot);
+
+  const skin=toon(0xd7a87e), cuff=toon(0x9c5a3c);
+  function forearm(){
+    const g=new THREE.Group();
+    const fore=new THREE.Mesh(Cyl(0.05,0.044,0.36,7),skin);
+    fore.position.y=-0.2; addOutline(fore,1.09); g.add(fore);
+    const sleeve=new THREE.Mesh(Cyl(0.062,0.055,0.13,7),cuff);
+    sleeve.position.y=-0.36; addOutline(sleeve,1.08); g.add(sleeve);
+    const fist=new THREE.Mesh(Ico(0.057,0),skin);
+    fist.position.y=0.005; addOutline(fist,1.13); g.add(fist);
+    const thumb=new THREE.Mesh(Cyl(0.019,0.017,0.075,5),skin);
+    thumb.position.set(0.045,0.03,0.028); thumb.rotation.z=-0.55; g.add(thumb);
+    return g;
+  }
+  vmArmR=forearm();
+  vmArmR.position.set(0.205,-0.215,-0.44);
+  vmArmR.rotation.set(0.42,-0.14,-0.30);
+  vmRoot.add(vmArmR);
+
+  vmArmL=forearm();
+  vmArmL.position.set(-0.215,-0.255,-0.47);
+  vmArmL.rotation.set(0.34,0.16,0.34);
+  vmRoot.add(vmArmL);
+
+  vmHand=new THREE.Group(); vmHand.position.set(0,0.02,0); vmArmR.add(vmHand);
+}
+function vmSetTool(id){
+  if(vmToolId===id) return;
+  vmToolId=id;
+  if(vmTool){ vmHand.remove(vmTool); vmTool=null; }
+  const m=toolModel(id);
+  if(m){
+    m.scale.setScalar(0.62);
+    m.rotation.set(-0.62,0.12,-0.16);
+    vmHand.add(m); vmTool=m;
+  }
+}
+function updateViewModel(dt,speed){
+  if(!vmRoot) return;
+  vmSetTool(S.equipped);
+  vmWalk+=dt*speed*2.4;
+  const b=clamp(speed*0.02,0,0.5);
+  vmRoot.position.set(Math.sin(vmWalk*0.5)*0.012*b*8, Math.sin(vmWalk)*0.011*b*8, 0);
+  // look-sway: the arms lag the camera a touch
+  vmRoot.rotation.z = lerp(vmRoot.rotation.z, clamp(-S.pitch*0.06,-0.05,0.05), clamp(dt*6,0,1));
+
+  const sw=S.swing;
+  if(sw>0){
+    const q=1-sw;                                   // 0 -> 1 over the swing
+    const arc=Math.sin(q*Math.PI);
+    vmArmR.rotation.x = 0.42 - arc*1.5;
+    vmArmR.position.z = -0.44 - arc*0.16;
+    vmArmR.position.y = -0.215 + arc*0.09;
+  }else{
+    vmArmR.rotation.x = lerp(vmArmR.rotation.x,0.42+Math.sin(vmWalk)*0.05,clamp(dt*10,0,1));
+    vmArmR.position.z = lerp(vmArmR.position.z,-0.44,clamp(dt*10,0,1));
+    vmArmR.position.y = lerp(vmArmR.position.y,-0.215,clamp(dt*10,0,1));
+  }
+  vmArmL.rotation.x = 0.34 - Math.sin(vmWalk)*0.06;
+  vmArmL.visible = !S.buildMode;
+  if(vmTool&&vmTool.userData.flame){
+    const k=0.86+Math.sin(S.t*16)*0.12;
+    vmTool.userData.flame.scale.set(k,1+Math.sin(S.t*11)*0.2,k);
+    vmTool.userData.core.scale.set(k,k,k);
+  }
+}
+function vmVisible(){ return !S.vr && S.camMode===1 && S.phase!=='menu' && !!vmScene; }
+
 function initRenderer(){
   renderer=new THREE.WebGLRenderer({antialias:window.devicePixelRatio<2, powerPreference:'high-performance'});
   renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
@@ -588,6 +673,7 @@ function initRenderer(){
 
   addEventListener('resize',()=>{
     camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+    if(vmCam){ vmCam.aspect=innerWidth/innerHeight; vmCam.updateProjectionMatrix(); }
     renderer.setSize(innerWidth,innerHeight);
   });
 }
@@ -845,7 +931,7 @@ const S = {
   yaw:0, pitch:-0.12, onGround:true, camMode:3, vr:false,
   hp:100, food:100, water:100, stam:100, temp:100,
   inv:{}, hotIdx:0, equipped:'hands',
-  charKey:'', vault:{}, vaultDer:0,
+  charKey:'', vault:{}, vaultDer:0, fortLoaded:false,
   buildMode:false, pieceIdx:0, pieceRot:0,
   builds:new Map(), buildMeshes:new Map(),
   peers:new Map(),
@@ -956,33 +1042,35 @@ function toolModel(id){
     const m=new THREE.Mesh(Cyl(r,r*1.15,len,6),toon(col||0x7a5a38));
     addOutline(m,1.12); return m;
   };
+  // grip at the origin, tool rises along +Y
   if(id==='axe'){
-    const h=shaft(0.88,0.045); h.position.y=-0.2; g.add(h);
-    const bit=new THREE.Mesh(new THREE.BoxGeometry(0.27,0.21,0.07),toon(0x9a9890));
-    bit.position.set(0.1,0.17,0); bit.rotation.z=-0.28; addOutline(bit,1.07); g.add(bit);
-    const lash=new THREE.Mesh(Cyl(0.056,0.056,0.11,6),toon(0x53412c)); lash.position.y=0.16; g.add(lash);
+    const h=shaft(0.9,0.045); h.position.y=0.33; g.add(h);
+    const bit=new THREE.Mesh(new THREE.BoxGeometry(0.28,0.22,0.07),toon(0x9a9890));
+    bit.position.set(0.11,0.7,0); bit.rotation.z=-0.28; addOutline(bit,1.07); g.add(bit);
+    const lash=new THREE.Mesh(Cyl(0.056,0.056,0.11,6),toon(0x53412c)); lash.position.y=0.69; g.add(lash);
+    const butt=new THREE.Mesh(Cyl(0.055,0.055,0.07,6),toon(0x53412c)); butt.position.y=-0.1; g.add(butt);
   }else if(id==='pick'){
-    const h=shaft(0.88,0.045); h.position.y=-0.2; g.add(h);
-    const head=new THREE.Mesh(new THREE.BoxGeometry(0.46,0.075,0.075),toon(0x8e8b82));
-    head.position.y=0.21; head.rotation.z=0.2; addOutline(head,1.08); g.add(head);
-    const lash=new THREE.Mesh(Cyl(0.056,0.056,0.11,6),toon(0x53412c)); lash.position.y=0.2; g.add(lash);
+    const h=shaft(0.9,0.045); h.position.y=0.33; g.add(h);
+    const head=new THREE.Mesh(new THREE.BoxGeometry(0.48,0.075,0.075),toon(0x8e8b82));
+    head.position.y=0.74; head.rotation.z=0.2; addOutline(head,1.08); g.add(head);
+    const lash=new THREE.Mesh(Cyl(0.056,0.056,0.11,6),toon(0x53412c)); lash.position.y=0.72; g.add(lash);
   }else if(id==='spear'){
-    const h=shaft(1.75,0.038); h.position.y=-0.22; g.add(h);
-    const tip=new THREE.Mesh(Cone(0.07,0.36,5),toon(0xe0d7c2)); tip.position.y=0.76; addOutline(tip,1.09); g.add(tip);
-    const bind=new THREE.Mesh(Cyl(0.05,0.05,0.13,6),toon(0x53412c)); bind.position.y=0.57; g.add(bind);
+    const h=shaft(1.8,0.038); h.position.y=0.62; g.add(h);   // gripped a third up
+    const tip=new THREE.Mesh(Cone(0.07,0.38,5),toon(0xe0d7c2));
+    tip.position.y=1.65; addOutline(tip,1.09); g.add(tip);
+    const bind=new THREE.Mesh(Cyl(0.05,0.05,0.13,6),toon(0x53412c)); bind.position.y=1.44; g.add(bind);
   }else if(id==='torch'){
-    const h=shaft(0.72,0.04,0x6b5236); h.position.y=-0.16; g.add(h);
+    const h=shaft(0.74,0.04,0x6b5236); h.position.y=0.3; g.add(h);
     const wrap=new THREE.Mesh(Cyl(0.095,0.07,0.22,6),toon(0x4a3a26));
-    wrap.position.y=0.26; addOutline(wrap,1.07); g.add(wrap);
-    const flame=new THREE.Mesh(Cone(0.12,0.38,6),
+    wrap.position.y=0.7; addOutline(wrap,1.07); g.add(wrap);
+    const flame=new THREE.Mesh(Cone(0.12,0.4,6),
       new THREE.MeshBasicMaterial({color:0xffa838,transparent:true,opacity:0.92}));
-    flame.position.y=0.53; g.add(flame);
-    const core=new THREE.Mesh(Cone(0.06,0.21,6),new THREE.MeshBasicMaterial({color:0xfff2cc}));
-    core.position.y=0.48; g.add(core);
+    flame.position.y=0.98; g.add(flame);
+    const core=new THREE.Mesh(Cone(0.06,0.22,6),new THREE.MeshBasicMaterial({color:0xfff2cc}));
+    core.position.y=0.93; g.add(core);
     g.userData.flame=flame; g.userData.core=core;
   }
-  g.rotation.set(-0.34,0,-0.1);
-  return g;
+  return g;   // caller sets the rest pose
 }
 function setAvatarTool(av,id){
   const u=av.userData;
@@ -990,7 +1078,11 @@ function setAvatarTool(av,id){
   u.toolId=id;
   if(u.tool){ u.hand.remove(u.tool); u.tool=null; }
   const m=toolModel(id);
-  if(m){ u.hand.add(m); u.tool=m; }
+  if(m){
+    // the arm hangs down, so cant the tool forward and up out of the fist
+    m.rotation.set(-1.05,0,-0.12);
+    u.hand.add(m); u.tool=m;
+  }
 }
 // The torch light lives in the scene, not on the avatar: three skips lights
 // parented to an invisible object, so a child light would die in first person.
@@ -2360,6 +2452,19 @@ function updateHUD(){
     $('v_cache').textContent=dd+'m';
     $('cachewrap').style.display='block';
   } else $('cachewrap').style.display='none';
+  // the screen closes in as you bleed out
+  S.hurtFlash=Math.max(0,(S.hurtFlash||0)-S.dt*2.2);
+  const LOW=42;
+  let vg=0;
+  if(S.hp<LOW && S.phase==='play'){
+    const k=1-S.hp/LOW;                       // 0 at the threshold, 1 at death
+    const beat=0.72+0.28*Math.sin(S.t*(2.6+k*7.5));
+    vg=k*k*0.92*beat;
+  }
+  const dm=$('dmg');
+  dm.style.opacity=clamp(vg + S.hurtFlash*0.55,0,1).toFixed(3);
+  dm.style.filter = S.hp<16&&S.phase==='play' ? 'saturate(1.5)' : 'none';
+
   const lk=rtcLinkCount();
   $('v_peers').textContent = (S.peers.size+1) + (lk?' · P2P '+lk:(S.peers.size?' · relay':''));
   const mins=Math.floor(S.tod*24*60);
@@ -2627,6 +2732,18 @@ function queueAHit(aid,dmg){
 }
 function pushFort(){ fortDirty=true; }
 
+// A tab can vanish without warning. keepalive lets the last write survive it.
+async function saveOnExit(){
+  try{
+    const own=[];
+    S.builds.forEach(r=>{ if(mine(r)) own.push({t:r.t,gx:r.gx,gz:r.gz,lv:r.lv,s:r.s,y:r.y,hp:r.hp,op:r.op||0}); });
+    if(own.length && S.fortLoaded)
+      await Net.set(K.fort(ME()),{o:ME(),char:S.charKey,ts:now(),derelict:0,pieces:own},true);
+    if(S.charKey) await Net.set(K.vault(),
+      {o:S.charKey,name:S.name,items:S.vault,derelict:S.vaultDer,at:now()},true);
+  }catch(e){}
+}
+
 async function joinWorld(){
   let w=await Net.get(K.world());
   if(!w||!w.seed){
@@ -2755,7 +2872,7 @@ function applyRemoteAI(list){
 async function slowSync(){
   if(S.phase==='menu') return;
   // push my fort
-  if(fortDirty && now()-lastFortPush>1200){
+  if(fortDirty && S.fortLoaded && now()-lastFortPush>1200){
     fortDirty=false; lastFortPush=now();
     const own=[];
     S.builds.forEach(r=>{ if(mine(r)) own.push({t:r.t,gx:r.gx,gz:r.gz,lv:r.lv,s:r.s,y:r.y,hp:r.hp,op:r.op||0}); });
@@ -2776,6 +2893,7 @@ async function slowSync(){
 
   // pull all forts
   const items=await Net.scan(K.fPre());
+  S.fortLoaded=true;      // only now is it safe to write ours back
   const keepIds=new Set();
   for(const it of items){
     const f=it.value; if(!f||!f.pieces) continue;
@@ -2922,6 +3040,9 @@ function frame(time){
     safe('peers', ()=>updatePeers(dt));
     safe('ghost', ()=>updateGhost());
     safe('hud',   ()=>updateHUD());
+    safe('viewmodel',()=>{
+      if(vmVisible()) updateViewModel(dt,Math.hypot(S.vel.x,S.vel.z));
+    });
     safe('fx',    ()=>{
       if(vrRay) vrRay.visible=S.vr&&S.buildMode;
       S.buildMeshes.forEach(m=>{
@@ -2960,7 +3081,15 @@ function frame(time){
     if(slowAcc>CFG.POLL_SLOW && !slowBusy){ slowAcc=0; slowBusy=true;
       slowSync().catch(e=>showErr('[slowSync] '+e.message)).then(()=>{slowBusy=false;}); }
   }
-  safe('render',()=>renderer.render(scene,camera));
+  safe('render',()=>{
+    renderer.render(scene,camera);
+    if(vmVisible()){
+      renderer.autoClear=false;
+      renderer.clearDepth();          // draw the hands over the world, never through it
+      renderer.render(vmScene,vmCam);
+      renderer.autoClear=true;
+    }
+  });
 }
 
 /* ============================================================
@@ -3004,6 +3133,11 @@ async function startRun(){
   S.phase='play'; S.runStart=now();
   refreshHotbar();
   toast('You wash ashore on '+S.room+' as '+S.name+'. Your chest answers to that name.');
+  setTimeout(()=>{
+    let n=0; S.builds.forEach(r=>{ if(mine(r)) n++; });
+    if(n) toast('Your shelter still stands — '+n+' pieces.');
+    else if(Net.mode==='memory') toast('No storage: nothing you build will survive leaving.');
+  },4200);
   toast('Find water before dark.');
   toast('Storage: '+Net.label());
 }
@@ -3023,6 +3157,7 @@ function boot(){
   }
   initRenderer();
   initBuildGeo();
+  initViewModel();
   setupInput();
   setupVR();
   renderer.setAnimationLoop(frame);
@@ -3060,6 +3195,10 @@ function boot(){
       '2. Create the Upstash store, then REDEPLOY — Vercel only injects env vars into builds made after you add them.\n'+
       '3. Open /api/kv?op=ping in a browser tab. It lists every env var name it can actually see.');
   });
+  addEventListener('pagehide',()=>{ if(S.phase==='play') saveOnExit(); });
+  addEventListener('visibilitychange',()=>{ if(document.hidden&&S.phase==='play') saveOnExit(); });
+  addEventListener('beforeunload',()=>{ if(S.phase==='play') saveOnExit(); });
+
   Net.detect().then(()=>{
     $('netbadge').textContent='STORAGE — '+Net.label()+'   ⓘ tap for detail';
     if(Net.mode!=='upstash') $('netbadge').style.color='#c1502e';
