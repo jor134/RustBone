@@ -389,13 +389,23 @@ const Net = {
     this.mode='memory';
   },
 
+  ttlFor(key){
+    if(key.indexOf(':vault:')>=0) return 7776000;   // 90 days
+    if(key.indexOf(':fort:')>=0)  return 5184000;   // 60 days
+    if(key.indexOf(':world')>=0)  return 5184000;
+    if(key.indexOf(':drop:')>=0)  return 7200;
+    if(key.indexOf(':sig:')>=0)   return 180;
+    if(key.indexOf(':p:')>=0)     return 90;
+    if(key.indexOf(':ai')>=0)     return 90;
+    return CFG.KEY_TTL;
+  },
   async set(key,val,keepalive){
     const s = JSON.stringify(val);
     try{
       if(this.mode==='upstash'){
         await fetch('/api/kv',{method:'POST',headers:{'Content-Type':'application/json'},
           keepalive:!!keepalive,
-          body:JSON.stringify({op:'set',key,value:s,ttl:CFG.KEY_TTL})});
+          body:JSON.stringify({op:'set',key,value:s,ttl:this.ttlFor(key)})});
         return true;
       }
       if(this.mode==='claude'){ await window.storage.set(key,s,true); return true; }
@@ -652,7 +662,10 @@ function updateViewModel(dt,speed){
     vmTool.userData.core.scale.set(k,k,k);
   }
 }
-function vmVisible(){ return !S.vr && S.camMode===1 && S.phase!=='menu' && !!vmScene; }
+// the hands take over when the boom is jammed against a wall
+function vmVisible(){
+  return !S.vr && S.phase!=='menu' && !!vmScene && (S.camMode===1 || S.camTight);
+}
 
 function initRenderer(){
   renderer=new THREE.WebGLRenderer({antialias:window.devicePixelRatio<2, powerPreference:'high-performance'});
@@ -731,6 +744,121 @@ function buildTerrain(){
   const sg=new THREE.PlaneBufferGeometry(1400,1400,1,1); sg.rotateX(-Math.PI/2);
   const sm=new THREE.Mesh(sg,new THREE.MeshBasicMaterial({color:0x123f4e}));
   sm.position.y=-14; scene.add(sm);
+}
+
+/* ---------------- GRASS ----------------
+   One InstancedMesh, one draw call. The sway happens entirely in the vertex
+   shader off the instance's own world position, so nothing is updated on the
+   CPU except a single time uniform.
+   -------------------------------------- */
+let grassMesh=null, grassU=null;
+function tuftGeometry(){
+  const pos=[], col=[];
+  const c0=new THREE.Color(0x3c6630), c1=new THREE.Color(0x86b452);
+  const m=new THREE.Matrix4(), v=new THREE.Vector3();
+  function blade(yaw,tilt,h,w){
+    const local=[
+      [-w,0,0,0],[w,0,0,0],[w*0.58,h*0.55,0,0.55],
+      [-w,0,0,0],[w*0.58,h*0.55,0,0.55],[-w*0.58,h*0.55,0,0.55],
+      [-w*0.58,h*0.55,0,0.55],[w*0.58,h*0.55,0,0.55],[0,h,h*0.16,1]
+    ];
+    m.makeRotationY(yaw); m.multiply(new THREE.Matrix4().makeRotationX(tilt));
+    for(const p of local){
+      v.set(p[0],p[1],p[2]).applyMatrix4(m);
+      pos.push(v.x,v.y,v.z);
+      const c=c0.clone().lerp(c1,p[3]);
+      col.push(c.r,c.g,c.b);
+    }
+  }
+  blade(0,      0.10, 1.0,  0.052);
+  blade(2.09,  -0.14, 0.84, 0.046);
+  blade(4.18,   0.18, 0.92, 0.048);
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(pos),3));
+  g.setAttribute('color',   new THREE.BufferAttribute(new Float32Array(col),3));
+  // lit like the ground it grows out of, not like a set of flat cards
+  const n=new Float32Array(pos.length);
+  for(let i=0;i<n.length;i+=3){ n[i]=0; n[i+1]=1; n[i+2]=0; }
+  g.setAttribute('normal',new THREE.BufferAttribute(n,3));
+  return g;
+}
+function buildGrass(seed){
+  const rnd=mulberry32(seed^0x6b17);
+  const COUNT=15000;
+  const mat=toon(0xffffff,{vertexColors:true,side:THREE.DoubleSide});
+  mat.onBeforeCompile=(sh)=>{
+    sh.uniforms.uTime={value:0};
+    grassU=sh.uniforms;
+    sh.vertexShader='uniform float uTime;\n'+sh.vertexShader;
+    sh.vertexShader=sh.vertexShader.replace('#include <begin_vertex>',
+      'vec3 transformed = vec3(position);\n'+
+      'float ph = instanceMatrix[3].x*0.33 + instanceMatrix[3].z*0.21;\n'+
+      'float gust = sin(uTime*0.27 + instanceMatrix[3].x*0.011 + instanceMatrix[3].z*0.008)*0.5+0.5;\n'+
+      'float sway = (sin(uTime*1.85 + ph) + 0.42*sin(uTime*3.6 + ph*1.7)) * (0.32 + 0.68*gust);\n'+
+      'float k = max(position.y,0.0);\n'+
+      'transformed.x += sway * k * 0.40;\n'+
+      'transformed.z += sway * k * 0.21;');
+  };
+  grassMesh=new THREE.InstancedMesh(tuftGeometry(),mat,COUNT);
+  grassMesh.frustumCulled=false;
+  const d=new THREE.Object3D();
+  let placed=0, guard=0;
+  while(placed<COUNT && guard<COUNT*22){
+    guard++;
+    const x=(rnd()-0.5)*CFG.WORLD*0.94, z=(rnd()-0.5)*CFG.WORLD*0.94;
+    const h=heightAt(x,z);
+    if(h<1.9||h>17.5) continue;
+    if(slopeAt(x,z)>0.95) continue;
+    const sc=0.34+rnd()*0.32;
+    d.position.set(x,h-0.03,z);
+    d.rotation.set(0,rnd()*6.283,0);
+    d.scale.set(sc*(0.8+rnd()*0.5),sc*(0.75+rnd()*0.7),sc*(0.8+rnd()*0.5));
+    d.updateMatrix();
+    grassMesh.setMatrixAt(placed++,d.matrix);
+  }
+  grassMesh.count=placed;
+  grassMesh.instanceMatrix.needsUpdate=true;
+  scene.add(grassMesh);
+}
+
+/* ---------------- IMPACT DEBRIS ---------------- */
+const PARTS=[];
+function spawnBurst(x,y,z,opts){
+  if(PARTS.length>240) return;
+  const o=Object.assign({n:8,color:0x8a6540,size:0.07,spread:2.4,up:2.8,
+                         life:0.7,grav:9,puff:0},opts||{});
+  for(let i=0;i<o.n;i++){
+    const m=new THREE.Mesh(Ico(o.size*(0.55+Math.random()*0.85),0),
+      new THREE.MeshBasicMaterial({color:o.color,transparent:true,opacity:1}));
+    m.position.set(x+(Math.random()-0.5)*0.3,y+(Math.random()-0.5)*0.3,z+(Math.random()-0.5)*0.3);
+    scene.add(m);
+    PARTS.push({m,vel:new THREE.Vector3((Math.random()-0.5)*o.spread,
+      Math.random()*o.up,(Math.random()-0.5)*o.spread),
+      life:0,max:o.life*(0.7+Math.random()*0.6),grav:o.grav,
+      sx:(Math.random()-0.5)*13,sy:(Math.random()-0.5)*13,grow:0,base:1});
+  }
+  for(let i=0;i<o.puff;i++){
+    const m=new THREE.Mesh(Ico(0.17+Math.random()*0.13,1),
+      new THREE.MeshBasicMaterial({color:o.puffColor||0xd6cdbd,transparent:true,
+        opacity:0.5,depthWrite:false}));
+    m.position.set(x+(Math.random()-0.5)*0.5,y+Math.random()*0.4,z+(Math.random()-0.5)*0.5);
+    scene.add(m);
+    PARTS.push({m,vel:new THREE.Vector3((Math.random()-0.5)*0.8,0.65+Math.random()*0.5,
+      (Math.random()-0.5)*0.8),
+      life:0,max:1.0+Math.random()*0.6,grav:-0.5,sx:0,sy:0.7,grow:2.1,base:0.5});
+  }
+}
+function updateParticles(dt){
+  for(let i=PARTS.length-1;i>=0;i--){
+    const p=PARTS[i]; p.life+=dt;
+    if(p.life>=p.max){ scene.remove(p.m); p.m.material.dispose(); PARTS.splice(i,1); continue; }
+    p.vel.y-=p.grav*dt;
+    p.m.position.addScaledVector(p.vel,dt);
+    p.m.rotation.x+=p.sx*dt; p.m.rotation.y+=p.sy*dt;
+    const f=1-p.life/p.max;
+    p.m.material.opacity=f*p.base;
+    if(p.grow) p.m.scale.setScalar(1+p.grow*(1-f));
+  }
 }
 
 /* ---------------- SCATTER: trees, palms, rocks, bushes ---------------- */
@@ -933,7 +1061,8 @@ const S = {
   yaw:0, pitch:-0.12, onGround:true, camMode:3, vr:false,
   hp:100, food:100, water:100, stam:100, temp:100,
   inv:{}, hotIdx:0, equipped:'hands',
-  charKey:'', vault:{}, vaultDer:0, fortLoaded:false, broken:new Set(),
+  charKey:'', vault:{}, vaultDer:0, vaultLoaded:false, fortLoaded:false, broken:new Set(),
+  camDist:3.1, camTight:false,
   inRun:false, vrOK:false,
   buildMode:false, pieceIdx:0, pieceRot:0,
   builds:new Map(), buildMeshes:new Map(),
@@ -1710,6 +1839,9 @@ function damagePiece(id,dmg){
   r.hp-=dmg;
   if(mine(r)) pushFort(); else raidDirty.add(r.o);
   if(r.hp<=0){
+    const t2=pieceTransform(r);
+    spawnBurst(t2.position.x,t2.position.y,t2.position.z,
+      {color:0x6f5033,n:20,size:0.11,life:1.2,spread:4.5,up:3.4,puff:3,puffColor:0xb8a98e});
     S.broken.add(id);
     removePiece(id,true);
     toast(r.t==='dr'?'The door gives way':'Structure broken');
@@ -1741,16 +1873,29 @@ async function pushRaidDamage(){
    same five minutes as the fort, and anyone who breaks your door can empty it.
    ============================================================ */
 function charIdentity(){ S.charKey=charFrom(S.room,S.name); }
+// The old version set S.vault={} whenever a read failed or returned nothing,
+// and the very next save wrote that emptiness over your real stash. Now a save
+// is impossible until a read has actually succeeded.
 async function loadVault(){
-  try{
-    const v=await Net.get(K.vault());
-    S.vault=(v&&v.items)||{};
-    S.vaultDer=(v&&v.derelict)||0;
-    if(S.vaultDer && now()-S.vaultDer>CFG.DERELICT_MS){ S.vaultDer=0; saveVault(); }
-  }catch(e){ S.vault=S.vault||{}; S.vaultDer=0; }
+  S.vaultLoaded=false;
+  for(let attempt=0;attempt<3;attempt++){
+    try{
+      const v=await Net.get(K.vault());
+      S.vault=(v&&v.items)||{};
+      S.vaultDer=(v&&v.derelict)||0;
+      S.vaultLoaded=true;
+      if(S.vaultDer && now()-S.vaultDer>CFG.DERELICT_MS){ S.vaultDer=0; saveVault(); }
+      return;
+    }catch(e){
+      await new Promise(r=>setTimeout(r,450*(attempt+1)));
+    }
+  }
+  S.vault={}; S.vaultLoaded=false;
+  toast('Could not read your chest — it will not be overwritten.');
 }
-function saveVault(){
-  Net.set(K.vault(),{o:S.charKey,name:S.name,items:S.vault,derelict:S.vaultDer,at:now()});
+function saveVault(keepalive){
+  if(!S.vaultLoaded || !S.charKey) return;
+  Net.set(K.vault(),{o:S.charKey,name:S.name,items:S.vault,derelict:S.vaultDer,at:now()},keepalive);
 }
 function vaultCount(){ let n=0; for(const k in S.vault) n+=S.vault[k]; return n; }
 function depositAll(k){
@@ -2413,7 +2558,7 @@ function updatePlayer(dt){
   selfAvatar.rotation.y = moving ? lerpAngle(selfAvatar.rotation.y, Math.atan2(-S.vel.x,-S.vel.z), clamp(dt*10,0,1))
                                  : lerpAngle(selfAvatar.rotation.y, S.yaw, clamp(dt*7,0,1));
   animateAvatar(selfAvatar,spd,dt,S.swing);
-  selfAvatar.visible = (S.camMode===3 && !S.vr);
+  selfAvatar.visible = (S.camMode===3 && !S.vr && !S.camTight);
 }
 function lerpAngle(a,b,t){
   let d=((b-a+Math.PI)%(Math.PI*2))-Math.PI;
@@ -2430,13 +2575,21 @@ function updateCamera(dt){
   }else{
     const cp=Math.cos(S.pitch);
     const f=new THREE.Vector3(-Math.sin(S.yaw)*cp, Math.sin(S.pitch), -Math.cos(S.yaw)*cp);
-    const dist=S.buildMode?5.4:4.4;
-    const p=new THREE.Vector3(0,1.55,0).addScaledVector(f,-dist);
-    // don't clip through ground
-    const worldY=S.pos.y+p.y;
-    const minY=surfaceY(S.pos.x+p.x,S.pos.z+p.z)+0.7;
-    if(worldY<minY) p.y=minY-S.pos.y;
-    camera.position.lerp(p,clamp(dt*14,0,1));
+    const want=S.buildMode?3.8:3.15;
+    const head=new THREE.Vector3(S.pos.x,S.pos.y+1.52,S.pos.z);
+    // walk the boom backwards and stop at the first wall, roof or hillside
+    let d=want;
+    for(let q=0.35;q<=want;q+=0.3){
+      const tx=head.x-f.x*q, ty=head.y-f.y*q, tz=head.z-f.z*q;
+      if(ty<=surfaceY(tx,tz,ty+1.0)+0.32 || shotBlocked(tx,ty,tz)){
+        d=Math.max(0.7,q-0.32); break;
+      }
+    }
+    // snap in hard, ease back out, so you never see through a wall
+    S.camDist=lerp(S.camDist, d, clamp(dt*(d<S.camDist?26:6),0,1));
+    const p=new THREE.Vector3(0,1.52,0).addScaledVector(f,-S.camDist);
+    camera.position.lerp(p,clamp(dt*20,0,1));
+    S.camTight = S.camDist<1.55;
   }
 }
 
@@ -2502,9 +2655,15 @@ function updateArrows(dt){
       }
       if(done) break;
 
-      if(shotBlocked(a.pos.x,a.pos.y,a.pos.z)){ a.stuck=true; a.t=0; break; }
+      if(shotBlocked(a.pos.x,a.pos.y,a.pos.z)){
+        spawnBurst(a.pos.x,a.pos.y,a.pos.z,{color:0x6f5033,n:5,size:0.045,life:0.45,spread:1.4,up:1.4});
+        a.stuck=true; a.t=0; break;
+      }
       const gh=heightAt(a.pos.x,a.pos.z);
-      if(a.pos.y<=gh){ a.pos.y=gh+0.02; a.stuck=true; a.t=0; break; }
+      if(a.pos.y<=gh){
+        spawnBurst(a.pos.x,gh+0.05,a.pos.z,{color:0xa79470,n:5,size:0.05,life:0.5,spread:1.2,up:1.3,puff:1});
+        a.pos.y=gh+0.02; a.stuck=true; a.t=0; break;
+      }
       if(Math.hypot(a.pos.x,a.pos.z)>CFG.WORLD*0.5){ done=true; break; }
     }
     if(done){ scene.remove(a.mesh); ARROWS.splice(i,1); continue; }
@@ -2606,17 +2765,31 @@ function doStrike(){
 }
 
 function flashHit(a){
+  spawnBurst(a.pos.x,a.pos.y+0.95,a.pos.z,{color:0x8e2a22,n:7,size:0.055,life:0.5,
+                                           spread:1.8,up:2.2,grav:11});
   a.mesh.traverse(o=>{ if(o.material&&o.material.emissive) o.material.emissive.setHex(0x662222); });
   setTimeout(()=>a.mesh.traverse(o=>{ if(o.material&&o.material.emissive) o.material.emissive.setHex(0); }),110);
 }
 function gather(n,t){
   const mult = (t.best===n.kind)? t.gather : 1;
+  const hy = n.y + (n.kind==='tree'?1.7 : n.kind==='palm'?1.5 : n.kind==='rock'?0.7 : 0.6);
+  if(n.kind==='tree')      spawnBurst(n.x,hy,n.z,{color:0x8a6540,n:9,size:0.075,life:0.75});
+  else if(n.kind==='palm') spawnBurst(n.x,hy,n.z,{color:0x7d6340,n:7,size:0.07,life:0.75});
+  else if(n.kind==='rock') spawnBurst(n.x,hy,n.z,{color:0x8e8b82,n:9,size:0.065,life:0.6,puff:2});
+  else                     spawnBurst(n.x,hy,n.z,{color:0x6f8f45,n:8,size:0.06,life:1.1,grav:3.2,up:1.6});
   if(n.kind==='tree'){ add('wood',2*mult); }
   else if(n.kind==='palm'){ add('wood',1*mult); }
   else if(n.kind==='rock'){ add('stone',2*mult); if(Math.random()<0.4) add('flint',1); }
   else if(n.kind==='bush'){ add('fiber',3); }
   n.hp-=1;
   if(n.hp<=0){
+    const fy=n.y+(n.kind==='rock'?0.6:1.2);
+    if(n.kind==='rock')
+      spawnBurst(n.x,fy,n.z,{color:0x8e8b82,n:16,size:0.1,life:1.0,spread:4,up:3.4,
+                             puff:5,puffColor:0xc9c2b4});
+    else
+      spawnBurst(n.x,fy,n.z,{color:0x6b5236,n:18,size:0.1,life:1.1,spread:4.2,up:3.6,
+                             puff:4,puffColor:0x9fb47c});
     hideNode(n);
     if(n.kind==='tree') add('fiber',2);
     if(n.kind==='palm'){ add('coco',2); toast('Coconuts — the only fresh water on this rock'); }
@@ -2823,6 +2996,10 @@ function renderChest(){
   fill(cg,S.vault,withdrawAll,'Nothing stored');
   fill(pg,S.inv,depositAll,'Your pack is empty');
   const sub=$('chestsub');
+  if(sub && !S.vaultLoaded){
+    sub.textContent='Chest unreachable — storage did not answer. Nothing will be saved or lost.';
+    return;
+  }
   if(sub) sub.textContent = S.vaultDer
     ? 'Flagged derelict — a raider who breaks your door can empty this right now.'
     : 'Stored here it survives your death. Tap to move a stack.';
@@ -3190,8 +3367,7 @@ async function saveOnExit(){
     S.builds.forEach(r=>{ if(mine(r)) own.push({t:r.t,gx:r.gx,gz:r.gz,lv:r.lv,s:r.s,y:r.y,hp:r.hp,op:r.op||0}); });
     if(own.length && S.fortLoaded)
       await Net.set(K.fort(ME()),{o:ME(),char:S.charKey,ts:now(),derelict:0,pieces:own},true);
-    if(S.charKey) await Net.set(K.vault(),
-      {o:S.charKey,name:S.name,items:S.vault,derelict:S.vaultDer,at:now()},true);
+    saveVault(true);
   }catch(e){}
 }
 
@@ -3518,6 +3694,8 @@ function frame(time){
     if(S.phase==='play') safe('survival',()=>survivalTick(dt));
     safe('beasts',()=>updateAnimals(dt));
     safe('arrows',()=>updateArrows(dt));
+    safe('debris',()=>updateParticles(dt));
+    safe('wind',  ()=>{ if(grassU) grassU.uTime.value=t; });
     safe('peers', ()=>updatePeers(dt));
     safe('ghost', ()=>updateGhost());
     safe('hud',   ()=>updateHUD());
@@ -3600,6 +3778,7 @@ async function startRun(){
     buildHeightmap(S.seed);
     placeZones(S.seed);
     buildTerrain();
+    buildGrass(S.seed);
     scatter(S.seed);
     buildZoneProps(S.seed);
     populateBeasts(S.seed);
