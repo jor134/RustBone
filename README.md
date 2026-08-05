@@ -123,3 +123,22 @@ its cost and greys out when you cannot afford it or are away from a workbench.
 
 Point the right controller and pull the trigger. Pointing at the console presses it
 instead of swinging, so you never chop a tree by accident while changing tools.
+
+## Audio
+
+Everything is synthesised with the Web Audio API at runtime — no sample files, so the
+game stays one deployable page. Nothing is created until the first tap, because browsers
+block audio before a user gesture.
+
+**Ambience** is four filtered noise loops whose gains track the world: surf rises as you
+approach the shore, wind rises on the ridge, insects fade in at night, and fire crackles
+scale with your distance to the nearest firepit or your own torch.
+
+**Music** is three crossfading drone beds — day (A minor), night (lower, darker), and
+danger — plus a sparse plucked motif that only plays when you are not in trouble.
+
+**Under 25 health** the danger bed takes over and a heartbeat starts, accelerating from
+56 bpm at the threshold to 124 bpm as you approach death. The screen vignette pulses at
+exactly the same rate, so the audio and the visual are the same warning.
+
+Muted from the menu or the `Snd` button in game; the setting persists.
