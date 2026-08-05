@@ -11,7 +11,7 @@
 const KEY_RE = /^sb:[A-Z0-9]{1,6}:[A-Za-z0-9:_-]{1,90}$/;
 const PREFIX_RE = /^sb:[A-Z0-9]{1,6}:[A-Za-z0-9:_-]{0,90}$/;
 const MAX_VALUE = 220 * 1024;
-const MAX_TTL = 60 * 60 * 24 * 7;
+const MAX_TTL = 60 * 60 * 24 * 90;   // vaults and forts are meant to outlive a session
 
 // Vercel injects different names depending on how the store was created:
 // the Upstash integration uses UPSTASH_REDIS_REST_*, the Marketplace/KV path
