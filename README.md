@@ -117,9 +117,23 @@ The DOM HUD does not exist inside a headset, so VR gets its own console strapped
 left controller: vitals, warmth, equipped tool, arrow count, day/time and the last
 message, drawn to canvas textures.
 
-Eight buttons in two rows — `<TOOL` `TOOL>` `USE` `BUILD` on top, `<PART` `PART>` `TURN`
-`CRAFT` below. `CRAFT` folds out a full recipe list beside your forearm; each row shows
-its cost and greys out when you cannot afford it or are away from a workbench.
+Twelve buttons in three rows:
+
+| | | | |
+|---|---|---|---|
+| `<TOOL` | `TOOL>` | `USE` | `BUILD` |
+| `<PART` | `PART>` | `TURN` | `CRAFT` |
+| `CHEST` | `HELP` | `SND` | `CLOSE` |
+
+`CRAFT` and `CHEST` fold out panels beside your forearm. The chest panel is two columns —
+what is stored and what you are carrying — with a `MOVE x1` / `MOVE ALL` switch at the
+bottom. `HELP` shows the full control legend; it opens by itself the first time you enter
+VR. `CLOSE` clears every panel at once.
+
+Controllers bind by **reported handedness, not controller index**. The index is not
+guaranteed to be left/right — on some runtimes 0 is simply whichever controller woke up
+first — so the wrist console re-parents itself to whichever controller says it is the
+left hand.
 
 Point the right controller and pull the trigger. Pointing at the console presses it
 instead of swinging, so you never chop a tree by accident while changing tools.

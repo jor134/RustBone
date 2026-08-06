@@ -2294,6 +2294,13 @@ function withdraw(k,n){
 }
 function openChest(){
   if(S.vaultDer && now()-S.vaultDer>CFG.DERELICT_MS){ S.vaultDer=0; saveVault(); }
+  if(S.vr && vrUI){
+    // the DOM panel does not exist inside a headset
+    vrUI.chest.visible=true; vrUI.craft.visible=false;
+    vrDrawChest(); vrSyncToggles();
+    toast('Chest open on your wrist');
+    return;
+  }
   togglePanel('p_chest');
 }
 async function raidVault(charKey){
@@ -3644,9 +3651,10 @@ function die(why){
 const AIM={org:new THREE.Vector3(),dir:new THREE.Vector3(0,0,-1)};
 let vrCtrl0=null, vrCtrl1=null, vrRay=null;
 function updateAim(){
-  if(S.vr && vrCtrl1){
-    vrCtrl1.getWorldPosition(AIM.org);
-    AIM.dir.set(0,0,-1).applyQuaternion(vrCtrl1.getWorldQuaternion(new THREE.Quaternion()));
+  const rc = VRR || vrCtrl1;
+  if(S.vr && rc){
+    rc.getWorldPosition(AIM.org);
+    AIM.dir.set(0,0,-1).applyQuaternion(rc.getWorldQuaternion(new THREE.Quaternion()));
   }else{
     camera.getWorldPosition(AIM.org);
     AIM.dir.set(0,0,-1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
@@ -4319,12 +4327,13 @@ function buildVrUI(){
 
   const buttons=[];
   const defs=[['tprev','<TOOL'],['tnext','TOOL>'],['use','USE'],['build','BUILD'],
-              ['pprev','<PART'],['pnext','PART>'],['turn','TURN'],['craft','CRAFT']];
+              ['pprev','<PART'],['pnext','PART>'],['turn','TURN'],['craft','CRAFT'],
+              ['chest','CHEST'],['help','HELP'],['snd','SND'],['close','CLOSE']];
   const bw=0.0355, bh=0.0245, gapx=0.0025, gapy=0.003;
   defs.forEach((d,i)=>{
     const col=i%4, row=Math.floor(i/4);
     const b=vrButton(d[0],d[1],bw,bh);
-    b.position.set(-1.5*(bw+gapx)+col*(bw+gapx), 0.012-row*(bh+gapy), 0.001);
+    b.position.set(-1.5*(bw+gapx)+col*(bw+gapx), 0.014-row*(bh+gapy), 0.001);
     root.add(b); buttons.push(b);
   });
 
@@ -4350,26 +4359,158 @@ function buildVrUI(){
     vrDrawCraftRow(m);
   });
 
+  /* ---- chest transfer panel: two columns, tap a row to move ---- */
+  const chest=new THREE.Group();
+  chest.position.set(-0.245,0.06,0); chest.visible=false;
+  root.add(chest);
+  const chestRows=[], packRows=[];
+  const mkHead=(txt,x)=>{
+    const c=vrCanvas(512,72);
+    if(c.ctx){
+      c.ctx.fillStyle='#c1502e'; c.ctx.fillRect(0,0,512,72);
+      c.ctx.fillStyle='#180b06'; c.ctx.font='bold 30px ui-monospace, monospace';
+      c.ctx.textAlign='center'; c.ctx.textBaseline='middle';
+      c.ctx.fillText(txt,256,38); c.tex.needsUpdate=true;
+    }
+    const m=vrPlane(0.185,0.026,c); m.position.set(x,0.030,0); chest.add(m);
+  };
+  mkHead('IN CHEST — TAKE',-0.10);
+  mkHead('IN PACK — STORE', 0.10);
+  for(let i=0;i<8;i++){
+    const a=vrCanvas(512,80), b=vrCanvas(512,80);
+    const ma=vrPlane(0.185,0.029,a), mb=vrPlane(0.185,0.029,b);
+    ma.position.set(-0.10,-i*0.031,0); mb.position.set(0.10,-i*0.031,0);
+    ma.userData={vrBtn:'take', slot:i, c:a, hover:false, key:null};
+    mb.userData={vrBtn:'store',slot:i, c:b, hover:false, key:null};
+    chest.add(ma); chest.add(mb);
+    chestRows.push(ma); packRows.push(mb);
+  }
+  const modeC=vrCanvas(512,72);
+  const mode=vrPlane(0.12,0.024,modeC);
+  mode.position.set(0,-0.272,0);
+  mode.userData={vrBtn:'chestmode',c:modeC,label:'MOVE x1',on:false};
+  vrDrawButton(mode,false); chest.add(mode);
+
+  /* ---- control legend ---- */
+  const hc=vrCanvas(560,470);
+  const help=vrPlane(0.26,0.218,hc);
+  help.position.set(0.235,0.075,0); help.visible=false;
+  root.add(help);
+
   vrUI={root:root,gauge:{mesh:gauge,c:gc},buttons:buttons,craft:craft,rows:rows,
-        hover:null,acc:0};
-  vrDrawGauges();
+        chest:chest,chestRows:chestRows,packRows:packRows,mode:mode,moveAll:false,
+        help:help,helpC:hc,hover:null,acc:0,chestAcc:0};
+  vrDrawGauges(); vrDrawHelp(); vrDrawChest();
 }
 function vrPickables(){
   if(!vrUI) return [];
-  return vrUI.craft.visible ? vrUI.buttons.concat(vrUI.rows) : vrUI.buttons;
+  let list=vrUI.buttons;
+  if(vrUI.craft.visible) list=list.concat(vrUI.rows);
+  if(vrUI.chest.visible) list=list.concat(vrUI.chestRows,vrUI.packRows,[vrUI.mode]);
+  return list;
+}
+function vrClosePanels(){
+  if(!vrUI) return;
+  vrUI.craft.visible=false; vrUI.chest.visible=false; vrUI.help.visible=false;
+  vrSetHover(null); vrSyncToggles();
+}
+function vrSyncToggles(){
+  if(!vrUI) return;
+  vrUI.buttons.forEach(b=>{
+    const id=b.userData.vrBtn;
+    if(id==='build') b.userData.on=S.buildMode;
+    else if(id==='craft') b.userData.on=vrUI.craft.visible;
+    else if(id==='chest') b.userData.on=vrUI.chest.visible;
+    else if(id==='help')  b.userData.on=vrUI.help.visible;
+    else if(id==='snd')   { b.userData.on=!SND.on; b.userData.label=SND.on?'SND':'MUTE'; }
+    else return;
+    vrDrawButton(b,vrUI.hover===b);
+  });
+}
+function vrDrawRow(m,key,count,verb){
+  const c=m.userData.c; if(!c||!c.ctx) return;
+  const g=c.ctx, W=c.cv.width, H=c.cv.height;
+  m.userData.key=key;
+  g.clearRect(0,0,W,H);
+  if(!key){
+    g.fillStyle='#0b1216'; g.fillRect(0,0,W,H);
+    c.tex.needsUpdate=true; m.visible=false; return;
+  }
+  m.visible=true;
+  g.fillStyle=m.userData.hover?'#c1502e':'#101c22'; g.fillRect(0,0,W,H);
+  g.strokeStyle='#2c4048'; g.lineWidth=3; g.strokeRect(2,2,W-4,H-4);
+  const meta=ITEMS[key]||TOOLS[key]||{n:key};
+  g.textBaseline='middle'; g.textAlign='left';
+  g.fillStyle=m.userData.hover?'#180b06':'#e8e2d2';
+  g.font='bold 30px ui-monospace, monospace';
+  g.fillText(meta.n,16,40);
+  g.textAlign='right';
+  g.fillStyle=m.userData.hover?'#3a1a0e':'#c9a670';
+  g.fillText('x'+count,W-16,40);
+  c.tex.needsUpdate=true;
+}
+function vrDrawChest(){
+  if(!vrUI) return;
+  const cKeys=Object.keys(S.vault).filter(k=>S.vault[k]>0);
+  const pKeys=Object.keys(S.inv).filter(k=>S.inv[k]>0);
+  vrUI.chestRows.forEach((m,i)=>vrDrawRow(m,cKeys[i]||null,S.vault[cKeys[i]]||0));
+  vrUI.packRows .forEach((m,i)=>vrDrawRow(m,pKeys[i]||null,S.inv[pKeys[i]]||0));
+  vrUI.mode.userData.label = vrUI.moveAll?'MOVE ALL':'MOVE x1';
+  vrUI.mode.userData.on = vrUI.moveAll;
+  vrDrawButton(vrUI.mode, vrUI.hover===vrUI.mode);
+}
+function vrDrawHelp(){
+  if(!vrUI||!vrUI.helpC.ctx) return;
+  const c=vrUI.helpC, g=c.ctx, W=c.cv.width, H=c.cv.height;
+  g.clearRect(0,0,W,H);
+  g.fillStyle='rgba(11,21,25,0.95)'; g.fillRect(0,0,W,H);
+  g.strokeStyle='#c1502e'; g.lineWidth=6; g.strokeRect(3,3,W-6,H-6);
+  g.fillStyle='#e8e2d2'; g.font='bold 30px ui-monospace, monospace';
+  g.textAlign='left'; g.textBaseline='middle';
+  g.fillText('QUEST CONTROLS',24,38);
+  const rows=[
+    ['LEFT STICK','Walk'],
+    ['RIGHT STICK','Snap turn'],
+    ['RIGHT TRIGGER','Strike / gather / fire'],
+    ['','— or press a panel you aim at'],
+    ['RIGHT GRIP','Toggle build mode'],
+    ['LEFT TRIGGER','Use — chest, door, fire, harvest'],
+    ['LEFT GRIP','Rotate the build piece'],
+    ['WRIST PANEL','Turn your left wrist to read it'],
+    ['CHEST / CRAFT','Open from the wrist buttons'],
+    ['MENU BUTTON','Quest menu leaves VR']
+  ];
+  rows.forEach((r,i)=>{
+    const y=86+i*37;
+    g.font='bold 21px ui-monospace, monospace'; g.fillStyle='#c1502e'; g.textAlign='left';
+    g.fillText(r[0],24,y);
+    g.font='21px ui-monospace, monospace'; g.fillStyle='#cfd6d9';
+    g.fillText(r[1],250,y);
+  });
+  g.font='18px ui-monospace, monospace'; g.fillStyle='#7f8b91';
+  g.fillText('Buttons bind by handedness, not slot,',24,H-46);
+  g.fillText('so left and right are always correct.',24,H-22);
+  c.tex.needsUpdate=true;
+}
+function vrHelpFirstRun(){
+  if(LS.get('sb_vrhelp')==='1'||!vrUI) return;
+  LS.set('sb_vrhelp','1');
+  vrUI.help.visible=true; vrSyncToggles();
+}
+function vrRedrawOne(m,hover){
+  const id=m.userData.vrBtn;
+  m.userData.hover=hover;
+  if(id==='make') vrDrawCraftRow(m);
+  else if(id==='take') vrDrawRow(m,m.userData.key,S.vault[m.userData.key]||0);
+  else if(id==='store') vrDrawRow(m,m.userData.key,S.inv[m.userData.key]||0);
+  else vrDrawButton(m,hover);
 }
 function vrSetHover(m){
-  if(vrUI.hover===m) return;
+  if(!vrUI||vrUI.hover===m) return;
   const old=vrUI.hover;
-  if(old){
-    if(old.userData.vrBtn==='make'){ old.userData.hover=false; vrDrawCraftRow(old); }
-    else vrDrawButton(old,false);
-  }
   vrUI.hover=m;
-  if(m){
-    if(m.userData.vrBtn==='make'){ m.userData.hover=true; vrDrawCraftRow(m); }
-    else vrDrawButton(m,true);
-  }
+  if(old) vrRedrawOne(old,false);
+  if(m)   vrRedrawOne(m,true);
 }
 function cycleTool(dir){
   const owned=HOT.map((id,i)=>({id:id,i:i}))
@@ -4396,6 +4537,24 @@ function vrPress(id){
     vrUI.rows.forEach(vrDrawCraftRow);
     vrSetHover(null);
   }
+  else if(id==='chest'){
+    const opening=!vrUI.chest.visible;
+    vrUI.chest.visible=opening; vrUI.craft.visible=false;
+    if(opening) vrDrawChest();
+    vrSetHover(null);
+  }
+  else if(id==='help'){ vrUI.help.visible=!vrUI.help.visible; }
+  else if(id==='snd'){ audioInit(); audioResume(); audioToggle(); }
+  else if(id==='close'){ vrClosePanels(); }
+  else if(id==='chestmode'){ vrUI.moveAll=!vrUI.moveAll; vrDrawChest(); }
+  else if(id==='take'){
+    const k=vrUI.hover&&vrUI.hover.userData.key;
+    if(k){ withdraw(k, vrUI.moveAll?(S.vault[k]||1):1); vrDrawChest(); }
+  }
+  else if(id==='store'){
+    const k=vrUI.hover&&vrUI.hover.userData.key;
+    if(k){ deposit(k, vrUI.moveAll?(have(k)||1):1); vrDrawChest(); }
+  }
   else if(id==='make'){
     const r=RECIPES[vrUI.hover.userData.recipe];
     if(r.bench && !nearBench()){ toast('You need to stand at a workbench'); }
@@ -4403,21 +4562,21 @@ function vrPress(id){
     else{ pay(r.cost); for(const k in r.give) add(k,r.give[k]); sfx('craft'); toast(r.name+' made'); }
     vrUI.rows.forEach(vrDrawCraftRow);
   }
-  if(vrUI){
-    vrUI.buttons.forEach(b=>{
-      if(b.userData.vrBtn==='build'){ b.userData.on=S.buildMode; vrDrawButton(b,vrUI.hover===b); }
-      if(b.userData.vrBtn==='craft'){ b.userData.on=vrUI.craft.visible; vrDrawButton(b,vrUI.hover===b); }
-    });
-  }
+  vrSyncToggles();
 }
 function vrUITick(dt){
   if(!S.vr||!vrUI){ return; }
   vrUI.acc=(vrUI.acc||0)+dt;
   if(vrUI.acc>0.15){ vrUI.acc=0; vrDrawGauges(); }
-  if(!vrCtrl1) return;
-  const org=vrCtrl1.getWorldPosition(new THREE.Vector3());
+  if(vrUI.chest.visible){
+    vrUI.chestAcc=(vrUI.chestAcc||0)+dt;
+    if(vrUI.chestAcc>0.5){ vrUI.chestAcc=0; vrDrawChest(); }
+  }
+  const rc = VRR || vrCtrl1;
+  if(!rc) return;
+  const org=rc.getWorldPosition(new THREE.Vector3());
   const dir=new THREE.Vector3(0,0,-1)
-    .applyQuaternion(vrCtrl1.getWorldQuaternion(new THREE.Quaternion()));
+    .applyQuaternion(rc.getWorldQuaternion(new THREE.Quaternion()));
   vrCaster.set(org,dir);
   vrCaster.far=1.6;
   let hit=null;
@@ -4441,6 +4600,46 @@ function vrDiag(){
     'Wolvic, or a PC browser with a headset connected and the button will arm.\n\n'+
     'On a phone this is expected. Cardboard-style viewers are not immersive-vr.';
 }
+// Controller index is NOT guaranteed to be left/right — on some runtimes 0 is
+// whichever controller woke up first. Bind by reported handedness instead.
+let VRL=null, VRR=null;
+function questController(accent){
+  const g=new THREE.Group();
+  const shell=toon(0x2b2f33), face=toon(0x3a4046), stick=toon(0x15181a);
+  const body=new THREE.Mesh(Cyl(0.021,0.026,0.085,10),shell);
+  body.rotation.x=0.35; body.position.set(0,-0.03,0.015);
+  addOutline(body,1.07); g.add(body);
+  const head=new THREE.Mesh(Ico(0.031,1),shell);
+  head.scale.set(1,0.7,1.05); addOutline(head,1.07); g.add(head);
+  const plate=new THREE.Mesh(Cyl(0.028,0.028,0.006,10),face);
+  plate.position.set(0,0.019,0.004); plate.rotation.x=0.25; g.add(plate);
+  const nub=new THREE.Mesh(Cyl(0.008,0.009,0.012,8),stick);
+  nub.position.set(0,0.026,-0.006); nub.rotation.x=0.25; g.add(nub);
+  const cap=new THREE.Mesh(Cyl(0.011,0.011,0.004,8),toon(accent));
+  cap.position.set(0,0.032,-0.007); cap.rotation.x=0.25; g.add(cap);
+  for(let i=-1;i<=1;i+=2){
+    const btn=new THREE.Mesh(Cyl(0.006,0.006,0.004,7),toon(accent));
+    btn.position.set(i*0.012,0.021,0.018); btn.rotation.x=0.25; g.add(btn);
+  }
+  const trig=new THREE.Mesh(new THREE.BoxGeometry(0.014,0.02,0.008),toon(0x1c2023));
+  trig.position.set(0,-0.007,0.03); trig.rotation.x=-0.4; g.add(trig);
+  return g;
+}
+function handOf(c){ return (c&&c.userData&&c.userData.hand)||null; }
+function assignVrHands(){
+  if(!vrCtrl0||!vrCtrl1) return;
+  const h0=handOf(vrCtrl0), h1=handOf(vrCtrl1);
+  VRL = (h0==='left') ? vrCtrl0 : ((h1==='left') ? vrCtrl1 : vrCtrl0);
+  VRR = (VRL===vrCtrl0) ? vrCtrl1 : vrCtrl0;
+  if(vrUI && vrUI.root){
+    if(vrUI.root.parent) vrUI.root.parent.remove(vrUI.root);
+    VRL.add(vrUI.root);
+  }
+  if(vrRay){
+    if(vrRay.parent) vrRay.parent.remove(vrRay);
+    VRR.add(vrRay);
+  }
+}
 function setupVR(){
   const btn=$('vrbtn');
   btn.style.display='block';                 // always shown, so it is never a mystery
@@ -4462,33 +4661,51 @@ function setupVR(){
         {optionalFeatures:['local-floor','bounded-floor','hand-tracking']});
       await renderer.xr.setSession(session);
       S.vr=true; S.camMode=1; S.camTight=false;
-      buildVrUI();
-      if(vrUI) vrUI.root.visible=true;
+      buildVrUI(); assignVrHands();
+      if(vrUI){ vrUI.root.visible=true; vrHelpFirstRun(); }
       closePanels();
       if(S.phase==='menu') startRun();
       session.addEventListener('end',()=>{
         S.vr=false; S.camMode=3;
-        if(vrUI){ vrUI.root.visible=false; vrUI.craft.visible=false; vrSetHover(null); }
+        if(vrUI){ vrUI.root.visible=false; vrClosePanels(); vrSetHover(null); }
       });
     }catch(e){ toast('VR unavailable: '+e.message); }
   });
+
   vrCtrl0=renderer.xr.getController(0); rig.add(vrCtrl0);
   vrCtrl1=renderer.xr.getController(1); rig.add(vrCtrl1);
-  const gripGeo=new THREE.BoxGeometry(0.05,0.05,0.16);
-  vrCtrl0.add(new THREE.Mesh(gripGeo,toon(0x555f66)));
-  vrCtrl1.add(new THREE.Mesh(gripGeo,toon(0x8a5030)));
-  const rg=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0),new THREE.Vector3(0,0,-8)]);
+  vrCtrl0.add(questController(0x8a5030));
+  vrCtrl1.add(questController(0xc1502e));
+
+  [vrCtrl0,vrCtrl1].forEach(c=>{
+    c.addEventListener('connected',e=>{
+      c.userData.hand=(e&&e.data&&e.data.handedness)||null;
+      assignVrHands();
+    });
+    c.addEventListener('selectstart',()=>{
+      if(!S.vr) return;
+      if(c===VRR||VRR===null){
+        // pointing at a panel presses it instead of swinging
+        if(vrUI && vrUI.hover){ vrPress(vrUI.hover.userData.vrBtn); return; }
+        doStrike();
+      }else{
+        doUse();
+      }
+    });
+    c.addEventListener('squeezestart',()=>{
+      if(!S.vr) return;
+      if(c===VRR||VRR===null) toggleBuild();
+      else if(S.buildMode) S.pieceRot=(S.pieceRot+1)&3;
+    });
+  });
+
+  const rg=new THREE.BufferGeometry().setFromPoints(
+    [new THREE.Vector3(0,0,0),new THREE.Vector3(0,0,-8)]);
   vrRay=new THREE.Line(rg,new THREE.LineBasicMaterial({color:0xc1502e,transparent:true,opacity:0.6}));
   vrCtrl1.add(vrRay);
-  vrCtrl1.addEventListener('selectstart',()=>{
-    // pointing at the wrist console presses it instead of swinging
-    if(S.vr && vrUI && vrUI.hover){ vrPress(vrUI.hover.userData.vrBtn); return; }
-    doStrike();
-  });
-  vrCtrl1.addEventListener('squeezestart',()=>toggleBuild());
-  vrCtrl0.addEventListener('selectstart',()=>doUse());
-  vrCtrl0.addEventListener('squeezestart',()=>{ if(S.buildMode) S.pieceRot=(S.pieceRot+1)&3; });
+  assignVrHands();
 }
+
 let snapCool=0;
 function updateVRLocomotion(dt){
   const session=renderer.xr.getSession(); if(!session) return;
