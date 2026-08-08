@@ -108,6 +108,19 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 #b_stam i{background:linear-gradient(90deg,#3d6640,#7bbd80)}
 #b_warm i{background:linear-gradient(90deg,#5a2a10,#e8a04a)}
 
+#tut{position:absolute;left:10px;top:calc(env(safe-area-inset-top) + 132px);
+  width:min(200px,52vw);display:none;pointer-events:auto;
+  background:linear-gradient(180deg,rgba(24,40,48,.94),rgba(16,28,34,.94));
+  border:1px solid #2c4048;border-left:2px solid var(--rust);border-radius:3px;
+  padding:8px 9px 9px}
+#tut .tut_h{display:flex;justify-content:space-between;font-size:8px;
+  letter-spacing:.2em;text-transform:uppercase;color:#7f8b91;margin-bottom:4px}
+#tut_t{font-size:12px;color:var(--bone);font-weight:600;line-height:1.3}
+#tut_d{font-size:10px;color:#9fabb1;line-height:1.5;margin-top:4px}
+#tut_x{margin-top:7px;padding:4px 8px;font-size:8px;letter-spacing:.16em;
+  text-transform:uppercase;background:#0b1519;border:1px solid #2c4048;
+  border-radius:2px;color:#7f8b91}
+#tut_x:active{border-color:var(--rust);color:var(--rust)}
 #topright{position:absolute;right:10px;top:calc(env(safe-area-inset-top) + 8px);text-align:right}
 #topright div{font-size:10px;letter-spacing:.12em;color:#8d9aa1;margin-bottom:3px}
 #topright b{color:var(--bone);font-weight:600}
@@ -218,6 +231,19 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 .allchip:active{background:var(--rust);color:#130b07}
 
 /* death */
+#win{position:fixed;inset:0;z-index:71;display:none;flex-direction:column;
+  align-items:center;justify-content:center;gap:8px;padding:24px;text-align:center;
+  background:radial-gradient(100% 70% at 50% 40%,rgba(216,166,90,.30),rgba(6,10,12,.97) 70%)}
+#win h2{font-size:clamp(28px,10vw,54px);color:var(--sand);line-height:.9}
+#win .sub{font-size:10px;letter-spacing:.3em;color:#a2946f;text-transform:uppercase}
+#wstats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;
+  width:100%;max-width:320px;margin:14px 0}
+#wstats div{background:#141a17;border:1px solid #2c3428;border-radius:3px;padding:9px}
+#wstats .k{font-size:8px;letter-spacing:.2em;color:#7f8b6b;text-transform:uppercase}
+#wstats .v{font-size:20px;color:var(--bone);margin-top:2px}
+#win .note{font-size:10px;color:#8d9a80;max-width:320px;line-height:1.6}
+#winagain{width:100%;max-width:320px;padding:14px;background:var(--sand);color:#1a1206;
+  border-radius:3px;font-size:16px;letter-spacing:.06em;margin-top:6px}
 #death{position:fixed;inset:0;z-index:70;display:none;flex-direction:column;
   align-items:center;justify-content:center;gap:8px;padding:24px;text-align:center;
   background:radial-gradient(100% 70% at 50% 40%,rgba(90,20,14,.5),rgba(5,8,10,.96) 70%)}
@@ -267,12 +293,19 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <div class="gauge"><div class="gl"><span>Wind</span><span id="v_stam">100</span></div><div class="bar" id="b_stam"><i></i></div></div>
     <div class="gauge"><div class="gl"><span>Warmth</span><span id="v_warm">100</span></div><div class="bar" id="b_warm"><i></i></div></div>
   </div>
+  <div id="tut">
+    <div class="tut_h"><span>Getting ashore</span><span id="tut_n">1/10</span></div>
+    <div id="tut_t">—</div>
+    <div id="tut_d">—</div>
+    <button id="tut_x">Skip</button>
+  </div>
   <div id="compass"><div id="comptrack"></div></div>
   <div id="topright">
     <div>ISLE <b id="v_room">—</b></div>
     <div>ASHORE <b id="v_peers">1</b></div>
     <div id="clockwrap">DAY <b id="v_day">1</b> · <b id="v_tod">06:00</b></div>
     <div id="cachewrap" style="display:none;color:#c1502e">CACHE <b id="v_cache">—</b></div>
+    <div id="bosswrap" style="display:none;color:#e8a04a;max-width:44vw"><b id="v_boss">—</b></div>
   </div>
   <div id="zonewarn"><div class="z1 dsp">SALVAGE ZONE</div><div class="z2">Rich salvage — and others know it</div></div>
   <div id="reticle"></div>
@@ -326,6 +359,19 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
   <div class="grid" id="packgrid"></div>
 </div>
 
+<div id="win">
+  <div class="sub">The isle keeps what it takes — but not you</div>
+  <h2 class="dsp">YOU GOT OFF</h2>
+  <div id="wstats">
+    <div><div class="k">Survived</div><div class="v" id="w_time">—</div></div>
+    <div><div class="k">Beasts felled</div><div class="v" id="w_kills">0</div></div>
+    <div><div class="k">Pieces raised</div><div class="v" id="w_built">0</div></div>
+    <div><div class="k">Days ashore</div><div class="v" id="w_day">1</div></div>
+  </div>
+  <div class="note" id="w_note">Motor, radio and harpoon. Three old things dead on the sand behind you, and open water ahead.</div>
+  <button id="winagain" class="dsp">WASH ASHORE AGAIN</button>
+</div>
+
 <div id="death">
   <div class="sub">The isle keeps what it takes</div>
   <h2 class="dsp">YOU DIED</h2>
@@ -372,10 +418,13 @@ function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a
 function hashStr(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
 function fmtTime(ms){const s=Math.floor(ms/1000);const m=Math.floor(s/60);return m+"m "+(s%60)+"s";}
 
+// NB: these must call localStorage directly. A find-and-replace in an early
+// build rewrote the bodies to call LS itself — infinite recursion, swallowed by
+// the try/catch, so every saved preference silently vanished for many builds.
 const LS={
-  get(k){ try{ return LS.get(k); }catch(e){ return null; } },
-  set(k,v){ try{ LS.set(k,v); }catch(e){} },
-  del(k){ try{ LS.del(k); }catch(e){} }
+  get(k){ try{ return window.localStorage.getItem(k); }catch(e){ return null; } },
+  set(k,v){ try{ window.localStorage.setItem(k,String(v)); }catch(e){} },
+  del(k){ try{ window.localStorage.removeItem(k); }catch(e){} }
 };
 
 /* --- on-screen error reporter: a dead render loop must never be silent --- */
@@ -789,8 +838,18 @@ function buildHeightmap(seed){
     }
   }
   HM.data=d;
+  findPeak();
 }
 
+const PEAK={x:0,z:0,y:0};
+function findPeak(){
+  const N=HM.N, W=HM.W, d=HM.data;
+  let best=-1e9;
+  for(let j=0;j<N;j++) for(let i=0;i<N;i++){
+    const h=d[j*N+i];
+    if(h>best){ best=h; PEAK.x=(i/(N-1)-0.5)*W; PEAK.z=(j/(N-1)-0.5)*W; PEAK.y=h; }
+  }
+}
 function heightAt(x,z){
   const N=HM.N, W=HM.W;
   const gx=clamp((x/W+0.5)*(N-1),0,N-1.001);
@@ -1212,7 +1271,8 @@ function scatter(seed){
       dummy.scale.set(s,s*lerp(0.85,1.2,rnd()),s);
       dummy.updateMatrix();
       for(const m of metas) m.setMatrixAt(placed,dummy.matrix);
-      RES_NODES.push({kind,x,z,y:h,idx:placed,metas,hp:kindHP(kind),alive:true});
+      RES_NODES.push({kind,x,z,y:h,idx:placed,metas,hp:kindHP(kind),alive:true,
+                      m0:dummy.matrix.clone(),deadAt:0});
       placed++;
     }
     for(const m of metas){
@@ -1232,7 +1292,18 @@ function scatter(seed){
 function hideNode(node){
   const m=new THREE.Matrix4().makeScale(0.0001,0.0001,0.0001);
   for(const im of node.metas){ im.setMatrixAt(node.idx,m); im.instanceMatrix.needsUpdate=true; }
-  node.alive=false;
+  node.alive=false; node.deadAt=S.t;
+}
+// Without regrowth the island is a finite pile of wood and fibre — which the
+// fire-arrow economy would exhaust long before three bosses are dead.
+const REGROW_SEC=300;
+function regrowNodes(){
+  for(const n of RES_NODES){
+    if(n.alive||!n.m0) continue;
+    if(S.t-n.deadAt < REGROW_SEC) continue;
+    for(const im of n.metas){ im.setMatrixAt(n.idx,n.m0); im.instanceMatrix.needsUpdate=true; }
+    n.alive=true; n.hp = n.kind==='bush'?1:(n.kind==='palm'?3:4);
+  }
 }
 
 /* ---------------- SALVAGE (PvP) ZONES + THE WRECK ---------------- */
@@ -1358,6 +1429,7 @@ const S = {
   hp:100, food:100, water:100, stam:100, chill:0, chillWarned:false,
   inv:{}, hotIdx:0, equipped:'hands',
   charKey:'', vault:{}, vaultDer:0, vaultLoaded:false, fortLoaded:false, broken:new Set(),
+  ammo:'arrow', escaped:false, tut:0,
   dur:{},
   camDist:3.1, camTight:false,
   inRun:false, vrOK:false,
@@ -1395,7 +1467,11 @@ const ITEMS = {
   coco:   {n:'Coconut', ic:'🥥'},
   scrap:  {n:'Scrap',   ic:'⚙️'},
   rope:   {n:'Rope',    ic:'🪢'},
-  arrow:  {n:'Arrow',   ic:'🪶'}
+  arrow:  {n:'Arrow',   ic:'🪶'},
+  firearrow:{n:'Fire arrow', ic:'🔥'},
+  motor:  {n:'Ship motor',      ic:'⚙️'},
+  radio:  {n:'Nav radio',       ic:'📻'},
+  harpoon:{n:'Harpoon',         ic:'🔱'}
 };
 const TOOLS = {
   hands:{n:'Fists', ic:'✊', dmg:8,  reach:2.6, rate:0.55, gather:1},
@@ -1416,7 +1492,9 @@ const RECIPES = [
   {id:'bow',   name:'Driftwood bow', cost:{wood:6,fiber:12,rope:2}, give:{bow:1}, bench:true,
    desc:'Kills at range. Nothing on this island charges a bow twice.'},
   {id:'arrow', name:'Arrows ×6',     cost:{wood:3,flint:2,fiber:2},  give:{arrow:6}, bench:true,
-   desc:'Fletched at the bench. Loosed arrows are gone for good.'}
+   desc:'Fletched at the bench. Loosed arrows are gone for good.'},
+  {id:'firearrow', name:'Fire arrow', cost:{scrap:5,rope:5},          give:{firearrow:1}, bench:true,
+   desc:'The only thing on this island that can wound the old things. Twenty kills one.'}
 ];
 const PIECES = [
   {id:'f',  name:'Floor',    cost:{wood:6},           hp:180},
@@ -2327,6 +2405,314 @@ function chestNear(){
 }
 
 /* ============================================================
+   THE OLD THINGS — three bosses, each awake in its own hours
+   Positions are a function of time and seed, so every client agrees without
+   syncing them. Only hits and deaths travel over the wire.
+   ============================================================ */
+const FIRE_ARROWS_TO_KILL=20;
+const BOSSES=[
+  {id:'trex', name:'BONECREST TYRANT', part:'motor',
+   win:[0.20,0.34], when:'early morning', where:'the radio mast',
+   dmg:44, reach:5.4, cd:2.2, hits:0, dead:false, mesh:null, pos:new THREE.Vector3(),
+   yaw:0, cool:0},
+  {id:'meg',  name:'THE SALT MAW', part:'radio',
+   win:[0.48,0.66], when:'afternoon', where:'the open water',
+   dmg:58, reach:6.5, cd:2.0, hits:0, dead:false, mesh:null, pos:new THREE.Vector3(),
+   yaw:0, cool:0},
+  {id:'ptero',name:'CLIFFSHADE', part:'harpoon',
+   win:[0.70,0.86], when:'evening', where:'the highest peak',
+   dmg:32, reach:4.6, cd:3.2, hits:0, dead:false, mesh:null, pos:new THREE.Vector3(),
+   yaw:0, cool:0}
+];
+const BOSS_BY_ID={}; BOSSES.forEach(b=>BOSS_BY_ID[b.id]=b);
+function bossAwake(b){ return S.tod>=b.win[0] && S.tod<=b.win[1] && !b.dead; }
+function bossHome(b){
+  if(b.id==='trex'){
+    const z=ZONES.filter(z=>z.name==='RADIO MAST')[0]||ZONES[1]||ZONES[0];
+    return {x:z.x, z:z.z, r:16};
+  }
+  if(b.id==='ptero') return {x:PEAK.x, z:PEAK.z, r:26};
+  return {x:0, z:0, r:CFG.WORLD*0.455};
+}
+
+function bossMesh(id){
+  const g=new THREE.Group();
+  if(id==='trex'){
+    const hide=toon(0x5d5138), hideD=toon(0x433a27), belly=toon(0x8f8362),
+          bone=toon(0xeee6d0), eyeM=toon(0xd8471f);
+    const body=new THREE.Mesh(Ico(1.5,2),hide);
+    body.scale.set(1.0,1.15,2.0); body.position.set(0,3.5,0.4);
+    addOutline(body,1.04); g.add(body);
+    const und=new THREE.Mesh(Ico(1.1,1),belly);
+    und.scale.set(0.85,0.6,1.7); und.position.set(0,2.85,0.5); g.add(und);
+    let tz=2.3,tr=0.8,ty=3.6;
+    for(let i=0;i<4;i++){
+      const seg=new THREE.Mesh(Cyl(tr,tr*0.66,1.5,7),i%2?hideD:hide);
+      seg.rotation.x=Math.PI/2; seg.position.set(0,ty,tz+0.75);
+      addOutline(seg,1.06); g.add(seg);
+      tz+=1.45; tr*=0.66; ty-=0.28;
+    }
+    const neck=new THREE.Mesh(Cyl(0.62,0.85,1.7,8),hide);
+    neck.position.set(0,4.5,-1.3); neck.rotation.x=-0.75;
+    addOutline(neck,1.06); g.add(neck);
+    const head=new THREE.Mesh(Ico(0.72,1),hide);
+    head.scale.set(0.8,0.85,1.7); head.position.set(0,5.15,-2.6);
+    addOutline(head,1.06); g.add(head);
+    const jaw=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.3,1.9),hideD);
+    jaw.position.set(0,4.6,-2.75); addOutline(jaw,1.05); g.add(jaw);
+    g.userData.jaw=jaw;
+    for(let i=0;i<8;i++){
+      const th=new THREE.Mesh(Cone(0.075,0.3,3),bone);
+      th.rotation.x=Math.PI;
+      th.position.set(i%2?0.3:-0.3,4.82,-1.9-Math.floor(i/2)*0.42); g.add(th);
+    }
+    for(let i=-1;i<=1;i+=2){
+      const eye=new THREE.Mesh(Ico(0.13,1),eyeM);
+      eye.position.set(i*0.4,5.42,-2.3); g.add(eye);
+      const horn=new THREE.Mesh(Cone(0.14,0.34,4),hideD);
+      horn.position.set(i*0.42,5.62,-2.1); g.add(horn);
+      const armp=new THREE.Group(); armp.position.set(i*0.75,3.9,-0.9); g.add(armp);
+      const arm=new THREE.Mesh(Cyl(0.14,0.1,0.8,6),hide);
+      arm.position.y=-0.4; arm.rotation.x=-0.7; armp.add(arm);
+      const claw=new THREE.Mesh(Cone(0.07,0.28,4),bone);
+      claw.position.set(0,-0.8,-0.25); claw.rotation.x=-1.3; armp.add(claw);
+      const lp=new THREE.Group(); lp.position.set(i*0.95,3.3,0.35); g.add(lp);
+      const thigh=new THREE.Mesh(Cyl(0.52,0.34,1.7,8),hide);
+      thigh.position.y=-0.85; addOutline(thigh,1.06); lp.add(thigh);
+      const kn=new THREE.Group(); kn.position.y=-1.7; lp.add(kn);
+      const shin=new THREE.Mesh(Cyl(0.3,0.2,1.4,7),hideD);
+      shin.position.set(0,-0.7,-0.2); shin.rotation.x=0.28; addOutline(shin,1.07); kn.add(shin);
+      const foot=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.25,1.1),hideD);
+      foot.position.set(0,-1.42,-0.5); addOutline(foot,1.06); kn.add(foot);
+      for(let c=-1;c<=1;c+=2){
+        const cl=new THREE.Mesh(Cone(0.09,0.34,4),bone);
+        cl.rotation.x=-Math.PI/2; cl.position.set(c*0.16,-1.42,-1.05); kn.add(cl);
+      }
+      g.userData['leg'+(i>0?1:0)]=lp;
+    }
+  }
+  else if(id==='meg'){
+    const skin=toon(0x3d4a56), skinD=toon(0x2a343d), belly=toon(0xcfd4cf),
+          bone=toon(0xf0ead8);
+    const body=new THREE.Mesh(Ico(1.7,2),skin);
+    body.scale.set(0.9,1.0,3.2); body.position.y=0.2;
+    addOutline(body,1.04); g.add(body);
+    const und=new THREE.Mesh(Ico(1.3,1),belly);
+    und.scale.set(0.75,0.5,2.6); und.position.set(0,-0.8,0.2); g.add(und);
+    const snout=new THREE.Mesh(Cone(1.25,2.6,8),skin);
+    snout.rotation.x=-Math.PI/2; snout.position.set(0,0.35,-5.6);
+    addOutline(snout,1.05); g.add(snout);
+    const jaw=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.55,2.4),skinD);
+    jaw.position.set(0,-0.55,-5.0); addOutline(jaw,1.05); g.add(jaw);
+    g.userData.jaw=jaw;
+    for(let r=0;r<2;r++) for(let i=0;i<9;i++){
+      const th=new THREE.Mesh(Cone(0.11,0.42,3),bone);
+      th.rotation.x=r?0:Math.PI;
+      th.position.set(-0.85+i*0.21,r?-0.28:0.12,-5.2-r*0.35); g.add(th);
+    }
+    const dorsal=new THREE.Mesh(Cone(1.0,2.4,3),skin);
+    dorsal.rotation.x=-0.25; dorsal.position.set(0,2.1,0.4);
+    addOutline(dorsal,1.06); g.add(dorsal);
+    g.userData.fin=dorsal;
+    const tailG=new THREE.Group(); tailG.position.set(0,0.2,4.6); g.add(tailG);
+    const tail=new THREE.Mesh(Cyl(0.9,0.35,3.0,7),skin);
+    tail.rotation.x=Math.PI/2; tail.position.z=1.4; addOutline(tail,1.06); tailG.add(tail);
+    const flukeU=new THREE.Mesh(Cone(1.1,2.8,3),skin);
+    flukeU.position.set(0,1.3,3.1); flukeU.rotation.x=-0.4; tailG.add(flukeU);
+    const flukeD=new THREE.Mesh(Cone(0.8,1.7,3),skin);
+    flukeD.position.set(0,-0.9,3.0); flukeD.rotation.x=Math.PI+0.4; tailG.add(flukeD);
+    g.userData.tail=tailG;
+    for(let i=-1;i<=1;i+=2){
+      const pec=new THREE.Mesh(Cone(0.9,2.6,3),skin);
+      pec.position.set(i*1.6,-0.5,-1.6);
+      pec.rotation.set(0.2,0,i*1.25); addOutline(pec,1.06); g.add(pec);
+    }
+  }
+  else{
+    const skin=toon(0x6a4a58), skinD=toon(0x4d3540), memb=toon(0x8f6270),
+          bone=toon(0xe9dfc9), eyeM=toon(0xf2c14a);
+    const body=new THREE.Mesh(Ico(0.7,1),skin);
+    body.scale.set(0.8,0.85,1.7); addOutline(body,1.06); g.add(body);
+    const neck=new THREE.Mesh(Cyl(0.22,0.34,1.0,7),skin);
+    neck.position.set(0,0.45,-1.0); neck.rotation.x=-0.8; addOutline(neck,1.08); g.add(neck);
+    const head=new THREE.Mesh(Ico(0.3,1),skin);
+    head.scale.set(0.7,0.8,1.4); head.position.set(0,0.85,-1.7);
+    addOutline(head,1.08); g.add(head);
+    const beak=new THREE.Mesh(Cone(0.16,1.7,5),bone);
+    beak.rotation.x=-Math.PI/2; beak.position.set(0,0.78,-2.9);
+    addOutline(beak,1.07); g.add(beak);
+    const crest=new THREE.Mesh(Cone(0.5,1.3,3),skinD);
+    crest.rotation.z=Math.PI/2; crest.rotation.y=-0.3;
+    crest.position.set(0,1.25,-1.3); addOutline(crest,1.07); g.add(crest);
+    for(let i=-1;i<=1;i+=2){
+      const eye=new THREE.Mesh(Ico(0.09,1),eyeM); eye.position.set(i*0.2,0.98,-1.9); g.add(eye);
+      const wing=new THREE.Group(); wing.position.set(i*0.45,0.3,-0.2); g.add(wing);
+      const bone1=new THREE.Mesh(Cyl(0.11,0.08,2.2,6),skinD);
+      bone1.rotation.z=i*Math.PI/2; bone1.position.x=i*1.1;
+      addOutline(bone1,1.09); wing.add(bone1);
+      const elb=new THREE.Group(); elb.position.x=i*2.2; wing.add(elb);
+      const bone2=new THREE.Mesh(Cyl(0.08,0.05,2.3,6),skinD);
+      bone2.rotation.z=i*Math.PI/2; bone2.position.set(i*1.15,0,0.15);
+      addOutline(bone2,1.1); elb.add(bone2);
+      const m1=new THREE.Mesh(new THREE.PlaneGeometry(2.2,1.9),
+        new THREE.MeshBasicMaterial({color:0x8f6270,side:THREE.DoubleSide,
+          transparent:true,opacity:0.94}));
+      m1.rotation.x=Math.PI/2; m1.position.set(i*1.1,0,0.85); wing.add(m1);
+      const m2=new THREE.Mesh(new THREE.PlaneGeometry(2.3,1.5),
+        new THREE.MeshBasicMaterial({color:0x7c5462,side:THREE.DoubleSide,
+          transparent:true,opacity:0.94}));
+      m2.rotation.x=Math.PI/2; m2.position.set(i*1.15,0,0.75); elb.add(m2);
+      g.userData['wing'+(i>0?1:0)]=wing;
+      g.userData['wtip'+(i>0?1:0)]=elb;
+    }
+    const tail=new THREE.Mesh(Cyl(0.12,0.03,2.4,5),skinD);
+    tail.rotation.x=Math.PI/2; tail.position.z=2.0; g.add(tail);
+    const vane=new THREE.Mesh(new THREE.PlaneGeometry(0.5,0.7),
+      new THREE.MeshBasicMaterial({color:0x8f6270,side:THREE.DoubleSide}));
+    vane.position.z=3.0; g.add(vane);
+  }
+  return g;
+}
+
+function updateBosses(dt){
+  if(S.phase!=='play') return;
+  for(const b of BOSSES){
+    const awake=bossAwake(b);
+    if(!awake){
+      if(b.mesh){ b.mesh.visible=false; }
+      continue;
+    }
+    if(!b.mesh){ b.mesh=bossMesh(b.id); scene.add(b.mesh); }
+    b.mesh.visible=true;
+    b.cool-=dt;
+
+    const home=bossHome(b);
+    const toP=new THREE.Vector3(S.pos.x-b.pos.x,0,S.pos.z-b.pos.z);
+    const dist=toP.length();
+    const hunts = dist < (b.id==='meg'?70:52);
+
+    if(b.id==='meg'){
+      // circles the island; only a threat if you are in the water
+      const ang = S.t*0.055;
+      let tx=Math.cos(ang)*home.r, tz=Math.sin(ang)*home.r;
+      if(hunts && S.pos.y<2.2){
+        const near=Math.hypot(S.pos.x,S.pos.z);
+        const a2=Math.atan2(S.pos.z,S.pos.x);
+        tx=Math.cos(a2)*Math.max(near+4,CFG.WORLD*0.30);
+        tz=Math.sin(a2)*Math.max(near+4,CFG.WORLD*0.30);
+      }
+      const dx=tx-b.pos.x, dz=tz-b.pos.z, d=Math.hypot(dx,dz)||1;
+      const spd=hunts?11:6;
+      b.pos.x+=dx/d*Math.min(spd*dt,d); b.pos.z+=dz/d*Math.min(spd*dt,d);
+      b.pos.y = -0.9 + Math.sin(S.t*0.5)*0.9;         // breaches and submerges
+      b.yaw=Math.atan2(dx,dz);
+      if(b.mesh.userData.tail) b.mesh.userData.tail.rotation.y=Math.sin(S.t*2.6)*0.45;
+      if(b.mesh.userData.jaw)  b.mesh.userData.jaw.rotation.x=0.2+Math.sin(S.t*1.6)*0.2;
+      if(dist<b.reach+5 && S.pos.y<1.6 && b.cool<=0){
+        b.cool=b.cd; hurtPlayer(b.dmg,b.name+' takes you'); sfx('flesh');
+      }
+    }
+    else if(b.id==='ptero'){
+      // wide orbit above the peak, stooping when you are close
+      const ang=S.t*0.30;
+      const stoop = hunts ? clamp(1-dist/52,0,1) : 0;
+      const r = lerp(home.r, 9, stoop);
+      const tx = (hunts?S.pos.x:home.x)+Math.cos(ang)*r;
+      const tz = (hunts?S.pos.z:home.z)+Math.sin(ang)*r;
+      const gy = heightAt(tx,tz);
+      const ty = Math.max(gy, PEAK.y) + lerp(22,3.4,stoop) + Math.sin(S.t*0.9)*1.6;
+      b.pos.lerp(new THREE.Vector3(tx,ty,tz), clamp(dt*1.5,0,1));
+      b.yaw = ang + Math.PI/2;
+      const flap=Math.sin(S.t*3.4);
+      if(b.mesh.userData.wing0){ b.mesh.userData.wing0.rotation.z= flap*0.5;
+                                 b.mesh.userData.wing1.rotation.z=-flap*0.5; }
+      if(b.mesh.userData.wtip0){ b.mesh.userData.wtip0.rotation.z= flap*0.4;
+                                 b.mesh.userData.wtip1.rotation.z=-flap*0.4; }
+      const dy=Math.abs(b.pos.y-(S.pos.y+1.4));
+      if(dist<b.reach+2.5 && dy<4 && b.cool<=0){
+        b.cool=b.cd; hurtPlayer(b.dmg,b.name+' rakes you'); sfx('flesh');
+      }
+    }
+    else{
+      // paces the mast, charges when you come near
+      let tx,tz;
+      if(hunts){ tx=S.pos.x; tz=S.pos.z; }
+      else{ const ang=S.t*0.18; tx=home.x+Math.cos(ang)*home.r; tz=home.z+Math.sin(ang)*home.r; }
+      const dx=tx-b.pos.x, dz=tz-b.pos.z, d=Math.hypot(dx,dz)||1;
+      const spd=hunts?9.5:4.2;
+      if(d>b.reach*0.8){
+        b.pos.x+=dx/d*Math.min(spd*dt,d);
+        b.pos.z+=dz/d*Math.min(spd*dt,d);
+      }
+      b.pos.y=heightAt(b.pos.x,b.pos.z);
+      b.yaw=Math.atan2(dx,dz);
+      const stride=Math.sin(S.t*(hunts?4.4:2.2));
+      if(b.mesh.userData.leg0){ b.mesh.userData.leg0.rotation.x= stride*0.55;
+                                b.mesh.userData.leg1.rotation.x=-stride*0.55; }
+      if(b.mesh.userData.jaw)   b.mesh.userData.jaw.rotation.x=0.1+Math.max(0,stride)*0.35;
+      if(dist<b.reach && b.cool<=0){
+        b.cool=b.cd; hurtPlayer(b.dmg,b.name+' closes its jaws'); sfx('flesh');
+      }
+    }
+    b.mesh.position.copy(b.pos);
+    b.mesh.rotation.y=b.yaw+Math.PI;
+  }
+}
+function bossHit(b){
+  b.hits++;
+  spawnBurst(b.pos.x,b.pos.y+2.5,b.pos.z,
+    {color:0xff9a3c,n:18,size:0.16,life:1.0,spread:5,up:4,puff:4,puffColor:0x6b6055});
+  sfx('flesh'); sfx('beast');
+  if(b.hits>=FIRE_ARROWS_TO_KILL){ bossDown(b); }
+  else toast(b.name+' — '+b.hits+'/'+FIRE_ARROWS_TO_KILL+' fire arrows');
+  pushBossState();
+}
+function bossDown(b){
+  b.dead=true; b.hits=FIRE_ARROWS_TO_KILL;
+  if(b.mesh){ scene.remove(b.mesh); b.mesh=null; }
+  add(b.part,1);
+  sfx('beastdie'); sfx('chime');
+  spawnBurst(b.pos.x,b.pos.y+2,b.pos.z,
+    {color:0xffc45a,n:34,size:0.2,life:1.8,spread:8,up:6,puff:8,puffColor:0xd8cdb4});
+  toast(b.name+' falls. It carried '+ITEMS[b.part].n+'.');
+  S.bossKills=(S.bossKills||0)+1;
+  pushBossState();
+  const left=BOSSES.filter(x=>!x.dead).length;
+  if(left) toast(left+' still breathe on this island.');
+  else toast('All three are down. The wreck can be made to float.');
+}
+function bossKey(){ return 'sb:'+S.room+':boss'; }
+function pushBossState(){
+  const o={};
+  BOSSES.forEach(b=>{ o[b.id]={d:b.dead?1:0,h:b.hits}; });
+  Net.set(bossKey(),o);
+  rtcSend({t:'boss',o:o},true);
+}
+function applyBossState(o){
+  if(!o) return;
+  BOSSES.forEach(b=>{
+    const v=o[b.id]; if(!v) return;
+    if(v.h>b.hits) b.hits=v.h;
+    if(v.d && !b.dead){
+      b.dead=true;
+      if(b.mesh){ scene.remove(b.mesh); b.mesh=null; }
+    }
+  });
+}
+function haveAllParts(){ return BOSSES.every(b=>have(b.part)>0); }
+function nextBossWindow(){
+  // the soonest boss you could go and fight
+  let best=null,bestWait=99;
+  for(const b of BOSSES){
+    if(b.dead) continue;
+    if(bossAwake(b)) return {b:b,wait:0};
+    let w=b.win[0]-S.tod; if(w<0) w+=1;
+    if(w<bestWait){ bestWait=w; best=b; }
+  }
+  return best?{b:best,wait:bestWait}:null;
+}
+
+/* ============================================================
    DEATH CACHE — everything you were carrying, left where you fell
    ============================================================ */
 const DROPS=[];
@@ -2852,6 +3238,7 @@ function setupInput(){
   $('s_view').addEventListener('click',cycleCam);
   $('s_menu').addEventListener('click',openMenu);
   const sb=$('s_snd'); if(sb) sb.addEventListener('click',audioToggle);
+  const tx=$('tut_x'); if(tx) tx.addEventListener('click',tutSkip);
   addEventListener('keydown',e=>{ if(e.code==='Escape') openMenu(); });
   $('x_craft').addEventListener('click',()=>closePanels());
   $('x_pack').addEventListener('click',()=>closePanels());
@@ -3018,18 +3405,44 @@ function makeArrowMesh(){
   }
   return g;
 }
+function makeFireArrowMesh(){
+  const g=makeArrowMesh();
+  const head=new THREE.Mesh(Cone(0.075,0.3,6),
+    new THREE.MeshBasicMaterial({color:0xffa838,transparent:true,opacity:0.92}));
+  head.rotation.x=-Math.PI/2; head.position.z=-0.3; g.add(head);
+  const core=new THREE.Mesh(Cone(0.04,0.17,5),new THREE.MeshBasicMaterial({color:0xfff2cc}));
+  core.rotation.x=-Math.PI/2; core.position.z=-0.32; g.add(core);
+  const li=new THREE.PointLight(0xff8a30,2.2,12,1.8); g.add(li);
+  g.userData.flame=head; g.userData.core=core;
+  return g;
+}
 function fireArrow(t){
-  if(have('arrow')<=0){ toast('Quiver empty'); return; }
-  S.inv.arrow--; sfx('bow'); wearTool();
+  const fire = S.ammo==='firearrow' && have('firearrow')>0;
+  const kind = fire ? 'firearrow' : 'arrow';
+  if(have(kind)<=0){
+    if(S.ammo==='firearrow'){ S.ammo='arrow'; refreshHotbar(); }
+    toast('Quiver empty'); return;
+  }
+  S.inv[kind]--; sfx('bow'); wearTool();
   const dir=aimDir();
   const org=aimOrigin().addScaledVector(dir,0.7);
-  const a={mesh:makeArrowMesh(), pos:org, vel:dir.clone().multiplyScalar(t.muzzle||54),
-           dmg:t.projDmg||46, t:0, stuck:false};
+  const a={mesh: fire?makeFireArrowMesh():makeArrowMesh(), pos:org,
+           vel:dir.clone().multiplyScalar(t.muzzle||54),
+           dmg: fire?110:(t.projDmg||46), fire:fire, t:0, stuck:false};
   a.mesh.position.copy(a.pos); scene.add(a.mesh); ARROWS.push(a);
+  if(fire && have('firearrow')<=0){ S.ammo='arrow'; }
+  refreshHotbar();
 }
 function updateArrows(dt){
   for(let i=ARROWS.length-1;i>=0;i--){
     const a=ARROWS[i]; a.t+=dt;
+    if(a.fire && a.mesh.userData.flame){
+      const k=0.8+Math.sin(S.t*24+i)*0.2;
+      a.mesh.userData.flame.scale.set(k,1+Math.sin(S.t*17)*0.25,k);
+      if(!a.stuck && Math.random()<0.5)
+        spawnBurst(a.pos.x,a.pos.y,a.pos.z,{color:0xff9a3c,n:1,size:0.05,life:0.35,
+          spread:0.5,up:0.6,grav:-1.5});
+    }
     if(a.stuck){ if(a.t>14){ scene.remove(a.mesh); ARROWS.splice(i,1); } continue; }
     if(a.t>7){ scene.remove(a.mesh); ARROWS.splice(i,1); continue; }
     let done=false;
@@ -3037,6 +3450,20 @@ function updateArrows(dt){
     for(let k=0;k<STEPS && !done;k++){
       a.vel.y-=11*dt/STEPS;
       a.pos.addScaledVector(a.vel,dt/STEPS);
+
+      let bossHitDone=false;
+      for(const b of BOSSES){
+        if(!b.mesh||!b.mesh.visible||b.dead) continue;
+        const rr = b.id==='meg'?5.5:(b.id==='trex'?3.4:2.6);
+        const cy = b.id==='meg'?b.pos.y+0.5:(b.id==='trex'?b.pos.y+3.6:b.pos.y);
+        if(Math.hypot(b.pos.x-a.pos.x,b.pos.z-a.pos.z)<rr &&
+           Math.abs(a.pos.y-cy)<(b.id==='trex'?3.8:2.8)){
+          if(a.fire) bossHit(b);
+          else toast('The arrow glances off. Only fire will bite.');
+          bossHitDone=true; break;
+        }
+      }
+      if(bossHitDone){ done=true; break; }
 
       for(const an of ANIMALS){
         if(!an.alive) continue;
@@ -3257,6 +3684,14 @@ function doUse(){
   const org=aimOrigin(), dir=aimDir();
   const cache=nearestDrop();
   if(cache){ lootDrop(cache); return; }
+  // the wreck: where the run ends, if you have what it takes
+  const wreck=ZONES.filter(z=>z.main)[0];
+  if(wreck && Math.hypot(wreck.x-S.pos.x,wreck.z-S.pos.z)<12){
+    if(haveAllParts()){ escapeIsland(); return; }
+    const missing=BOSSES.filter(b=>have(b.part)<=0).map(b=>ITEMS[b.part].n);
+    toast('The hull is sound. Still missing: '+missing.join(', '));
+    return;
+  }
   const ch=chestNear();
   if(ch){
     if(ch.derelict) raidVault(ch.char||S.charKey);   // your own ruin counts
@@ -3289,6 +3724,23 @@ function doUse(){
     if(Math.hypot(c.x-S.pos.x,c.z-S.pos.z)<2.6){ lootCrate(c); return; }
   }
   toast('Nothing to use here');
+}
+
+function escapeIsland(){
+  if(S.phase!=='play') return;
+  S.phase='won'; S.escaped=true;
+  sfx('chime'); sfx('craft');
+  const ms=now()-S.runStart;
+  $('w_time').textContent=fmtTime(ms);
+  $('w_kills').textContent=S.kills;
+  $('w_built').textContent=S.built;
+  $('w_day').textContent=S.day;
+  const best=JSON.parse(LS.get('sb_best')||'{}');
+  LS.set('sb_best',JSON.stringify({ms:ms,kills:S.kills,built:S.built,day:S.day,won:1}));
+  LS.set('sb_won','1');
+  closePanels();
+  $('win').style.display='flex';
+  toast('The motor catches. You are gone.');
 }
 
 /* ============================================================
@@ -3360,9 +3812,79 @@ function consume(id){
 }
 
 /* ============================================================
+   FIRST RUN — a short chain of objectives so nobody starves in the dark
+   wondering what the buttons do. Shown once, skippable, and it never
+   blocks anything: every step just watches your inventory.
+   ============================================================ */
+function ownsPiece(t){
+  let f=false;
+  S.builds.forEach(r=>{ if(!f && mine(r) && r.t===t) f=true; });
+  return f;
+}
+const TUT=[
+  {t:'Punch a tree',
+   d:'Face a trunk and tap STRIKE. Bare hands work; they are just slow.',
+   ok:()=>have('wood')>=6},
+  {t:'Tear up some bushes',
+   d:'The low green clumps give fibre. You need a lot of it, always.',
+   ok:()=>have('fiber')>=8},
+  {t:'Break rocks for flint',
+   d:'Grey boulders drop stone, and flint often enough. Keep hitting.',
+   ok:()=>have('flint')>=2},
+  {t:'Craft a spear',
+   d:'Tap CRAFT. Never meet a stalker with your fists — it will win.',
+   ok:()=>have('spear')>0},
+  {t:'Craft a stone axe',
+   d:'Also under CRAFT. Trees give three times the wood with one in hand.',
+   ok:()=>have('axe')>0},
+  {t:'Find water',
+   d:'Palms on the beach drop coconuts when felled. They are the only fresh water on this rock — the sea will only dry you out.',
+   ok:()=>have('coco')>0||S.water>92},
+  {t:'Lay a floor',
+   d:'Tap BUILD, pick Floor, tap STRIKE. Flat ground, above the tide line.',
+   ok:()=>ownsPiece('f')},
+  {t:'Raise walls and a door',
+   d:'Walls keep beasts out. They will chew through eventually, so keep a spear.',
+   ok:()=>ownsPiece('w')},
+  {t:'Build a firepit',
+   d:'On your floor. Fire cooks meat and holds off the night cold within 7m.',
+   ok:()=>ownsPiece('fi')},
+  {t:'Eat something cooked',
+   d:'Kill a boar, stand over it and tap USE to harvest, then USE at your fire.',
+   ok:()=>have('cooked')>0||S.food>96}
+];
+function tutSkip(){
+  S.tut=-1; LS.set('sb_tut','1');
+  const el=$('tut'); if(el) el.style.display='none';
+}
+function tutRender(){
+  const el=$('tut'); if(!el) return;
+  if(S.tut<0||S.tut>=TUT.length){ el.style.display='none'; return; }
+  el.style.display='block';
+  $('tut_n').textContent=(S.tut+1)+'/'+TUT.length;
+  $('tut_t').textContent=TUT[S.tut].t;
+  $('tut_d').textContent=TUT[S.tut].d;
+}
+function tutTick(){
+  if(S.tut<0||S.phase!=='play') return;
+  let moved=false, guard=0;
+  while(S.tut<TUT.length && guard++<TUT.length && TUT[S.tut].ok()){
+    S.tut++; moved=true;
+  }
+  if(moved){
+    sfx('chime');
+    if(S.tut>=TUT.length){
+      toast('You have the shape of it. The isle is yours to lose.');
+      S.tut=-1; LS.set('sb_tut','1');
+    }else toast('Next: '+TUT[S.tut].t);
+    tutRender();
+  }
+}
+
+/* ============================================================
    UI
    ============================================================ */
-const HOT=['hands','axe','pick','spear','bow','torch','cooked','coco','bandage'];
+const HOT=['hands','axe','pick','spear','bow','firearrow','torch','cooked','coco','bandage'];
 function refreshHotbar(){
   const bar=$('hotbar');
   if(bar.children.length!==HOT.length){
@@ -3381,7 +3903,12 @@ function refreshHotbar(){
     el.querySelector('.ic').textContent = isTool?TOOLS[id].ic:(ITEMS[id]?ITEMS[id].ic:'🩹');
     el.querySelector('.nm').textContent = isTool?TOOLS[id].n:(ITEMS[id]?ITEMS[id].n.split(' ')[0]:'Bandage');
     el.querySelector('.ct').textContent =
-      id==='hands' ? '' : (id==='bow' ? (owned?have('arrow'):'') : (owned||''));
+      id==='hands' ? '' :
+      (id==='bow' ? (owned?have(S.ammo):'') : (owned||''));
+    if(id==='firearrow'){
+      el.classList.toggle('on', S.ammo==='firearrow');
+      el.style.opacity = have('firearrow')?1:0.32;
+    }
     el.style.opacity = owned?1:0.32;
     // NB: do not name this 'bar' — it would shadow the outer hotbar element
     // for the whole block and put `bar.children[i]` above into the TDZ.
@@ -3401,6 +3928,15 @@ function refreshHotbar(){
 }
 function selectHot(i){
   const id=HOT[i]; if(!id) return;
+  if(id==='firearrow'){
+    // this slot is an ammunition switch, not a consumable
+    S.ammo = S.ammo==='firearrow' ? 'arrow' : 'firearrow';
+    if(S.ammo==='firearrow' && have('firearrow')<=0){
+      S.ammo='arrow'; toast('No fire arrows'); return;
+    }
+    toast(S.ammo==='firearrow' ? 'Fire arrows nocked' : 'Plain arrows nocked');
+    sfx('click'); refreshHotbar(); return;
+  }
   if(TOOLS[id]){
     if(id!=='hands' && have(id)<=0){ toast('You have no '+TOOLS[id].n.toLowerCase()); return; }
     S.hotIdx=i; S.equipped=id;
@@ -3594,6 +4130,27 @@ function updateHUD(){
         setPrompt(!mine(dr) ? 'Barred — break it or leave it'
                  : (dr.op ? 'Use — bar the door' : 'Use — open the door'));
       }
+    }
+  }
+  // endgame banner
+  const bw=$('bosswrap');
+  if(bw){
+    const live=BOSSES.filter(b=>!b.dead);
+    if(!live.length){
+      bw.style.display='block';
+      $('v_boss').textContent = haveAllParts()?'RETURN TO THE WRECK':'ALL THREE ARE DOWN';
+    }else{
+      const nx=nextBossWindow();
+      if(nx && nx.wait===0){
+        const b=nx.b, d=Math.round(Math.hypot(b.pos.x-S.pos.x,b.pos.z-S.pos.z));
+        bw.style.display='block';
+        $('v_boss').textContent = b.name+' — '+b.hits+'/'+FIRE_ARROWS_TO_KILL+
+          (b.mesh&&b.mesh.visible?('  ·  '+d+'m'):'');
+      }else if(nx){
+        bw.style.display='block';
+        const mins=Math.round(nx.wait*CFG.DAY_SEC/60*10)/10;
+        $('v_boss').textContent = nx.b.name+' wakes in '+mins+' min · '+nx.b.where;
+      }else bw.style.display='none';
     }
   }
   const zn=insideAnyZone(S.pos.x,S.pos.z);
@@ -3807,6 +4364,7 @@ function onRtcMsg(pid,raw){
     if(m.op==='add') spawnDrop(m.r);
     else if(m.op==='take') removeDrop(m.id);
   }
+  else if(m.t==='boss'){ applyBossState(m.o); }
   else if(m.t==='f'){
     if(m.op==='add') addPiece(m.r,true);
     else if(m.op==='del') removePiece(m.id);
@@ -3989,6 +4547,9 @@ async function slowSync(){
     if(own.length) await Net.set(K.fort(ME()),{o:ME(),char:S.charKey,ts:now(),derelict:0,pieces:own});
     else await Net.del(K.fort(ME()));
   }
+  // pull boss state
+  try{ applyBossState(await Net.get(bossKey())); }catch(e){}
+
   // pull caches
   try{
     const dr=await Net.scan('sb:'+S.room+':drop:');
@@ -4754,13 +5315,14 @@ function frame(time){
     safe('camera',()=>updateCamera(dt));
     if(S.phase==='play') safe('survival',()=>survivalTick(dt));
     safe('beasts',()=>updateAnimals(dt));
+    safe('bosses',()=>updateBosses(dt));
     safe('arrows',()=>updateArrows(dt));
     safe('debris',()=>updateParticles(dt));
-    safe('crates',()=>refreshCrates());
+    safe('crates',()=>{ refreshCrates(); regrowNodes(); });
     safe('wind',  ()=>{ if(grassU) grassU.uTime.value=t; });
     safe('peers', ()=>updatePeers(dt));
     safe('ghost', ()=>updateGhost());
-    safe('hud',   ()=>updateHUD());
+    safe('hud',   ()=>{ updateHUD(); tutTick(); });
     safe('viewmodel',()=>{
       if(vmVisible()) updateViewModel(dt,Math.hypot(S.vel.x,S.vel.z));
     });
@@ -4866,12 +5428,17 @@ async function startRun(){
     else if(Net.mode==='memory') toast('No storage: nothing you build will survive leaving.');
   },4200);
   toast('Find water before dark.');
+  if(S.tut>=0) setTimeout(()=>toast('Follow the card on the left — it will not let you starve.'),2600);
   toast('Storage: '+Net.label());
 }
 function resetRunState(){
   S.hp=100; S.food=100; S.water=100; S.stam=100; S.chill=0; S.chillWarned=false;
   S.inv={wood:0,fiber:0,stone:0}; S.equipped='hands'; S.hotIdx=0;
   S.kills=0; S.built=0; S.day=1; S.tod=0.27;
+  S.ammo='arrow'; S.escaped=false;
+  S.tut = LS.get('sb_tut')==='1' ? -1 : 0;
+  tutRender();
+  $('win').style.display='none';
   S.broken=new Set();
   S.buildMode=false; $('buildbar').style.display='none'; $('s_build').classList.remove('on');
   // clear my own fort remnants from the last life
@@ -4917,6 +5484,14 @@ function boot(){
     $('play').textContent='WADING ASHORE…';
     startRun().catch(e=>{ $('play').textContent='WASH ASHORE';
       showErr('[startRun] '+e.message+'\n'+String(e.stack||'').split('\n').slice(1,4).join('\n')); });
+  });
+  $('winagain').addEventListener('click',()=>{
+    $('win').style.display='none';
+    BOSSES.forEach(b=>{ if(b.mesh){ scene.remove(b.mesh); b.mesh=null; } });
+    clearRunIdentity(); newRunIdentity();
+    resetRunState(); spawnPlayer();
+    S.phase='play'; S.runStart=now(); refreshHotbar();
+    toast('Another castaway. The isle has not changed.');
   });
   $('respawn').addEventListener('click',()=>{
     clearRunIdentity(); newRunIdentity();

@@ -156,3 +156,40 @@ danger — plus a sparse plucked motif that only plays when you are not in troub
 exactly the same rate, so the audio and the visual are the same warning.
 
 Muted from the menu or the `Snd` button in game; the setting persists.
+
+## Endgame
+
+Three bosses, each awake only in its own hours. Positions are a pure function of time and
+seed, so every client agrees on where they are without syncing a thing — only hits and
+deaths travel over the wire.
+
+| Boss | Window | Where | Drops |
+|---|---|---|---|
+| Bonecrest Tyrant (T-Rex) | early morning, `tod 0.20–0.34` | the radio mast | Ship motor |
+| The Salt Maw (Megalodon) | afternoon, `0.48–0.66` | circling the island | Nav radio |
+| Cliffshade (Pterodactyl) | evening, `0.70–0.86` | the highest peak | Harpoon |
+
+**Only fire arrows wound them.** Anything else glances off with a message saying so. Each
+takes exactly 20. Fire arrows cost 20 scrap + 20 rope, workbench only.
+
+With all three parts, `Use` at the wreck rebuilds the boat and ends the run.
+
+### Tuning the grind
+
+Fire arrows cost 5 scrap + 5 rope. Sixty of them is 300 scrap and 300 rope (900 fibre) —
+roughly seven sweeps of the salvage zones, which lands the endgame near 45 minutes.
+
+Resource nodes now regrow after 300s, without which the fibre side was outright
+impossible: the island only holds about 930 fibre and nothing used to come back.
+
+If that is heavier than intended, the constants are all in one place:
+`RECIPES` (`firearrow` cost), `FIRE_ARROWS_TO_KILL`, `CRATE_REFILL`, `REGROW_SEC`.
+Dropping the arrow to 5 scrap + 5 rope makes the whole endgame about 45 minutes.
+
+## First run
+
+New players get a ten-step objective card in the corner: punch a tree, tear bushes, break
+rocks for flint, craft a spear, craft an axe, find a coconut, lay a floor, raise walls,
+build a firepit, eat something cooked. Each step just watches your inventory — nothing is
+gated or blocked, and the card can be skipped. It is remembered per browser, so it never
+appears twice.
