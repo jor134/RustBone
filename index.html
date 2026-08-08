@@ -2798,13 +2798,13 @@ function nearestDrop(){
 // restT / restMul: how long it labours afterwards, and how slow.
 // A predator that never tires is not a chase, it is a countdown.
 const BEAST = {
-  boar:   {hp:95, spd:5.4,  dmg:18, reach:2.3, det:15, agg:false, cd:1.5,
+  boar:   {hp:95, spd:5.4,  dmg:9,  wdmg:11, reach:2.3, det:15, agg:false, cd:1.5,
            burstT:5.0, restT:4.5, restMul:0.55, leash:55, patience:9,
            drop:{meat:3,hide:2}, name:'Boar'},
-  stalker:{hp:72, spd:6.7,  dmg:24, reach:2.7, det:26, agg:true,  cd:1.1,
+  stalker:{hp:72, spd:6.7,  dmg:12, wdmg:14, reach:2.7, det:26, agg:true,  cd:1.1,
            burstT:4.2, restT:5.0, restMul:0.52, leash:80, patience:14,
            drop:{meat:2,hide:1,flint:1}, name:'Isle stalker'},
-  crab:   {hp:34, spd:3.2,  dmg:9,  reach:1.8, det:7,  agg:false, cd:1.8,
+  crab:   {hp:34, spd:3.2,  dmg:5,  wdmg:5,  reach:1.8, det:7,  agg:false, cd:1.8,
            burstT:3, restT:3, restMul:0.7, leash:22, patience:5,
            drop:{meat:1,fiber:1}, name:'Reef crab'}
 };
@@ -3104,7 +3104,7 @@ function updateAnimals(dt){
         // it wants in. It cannot walk in, so it works on the wall.
         if(a.state==='chase' && a.cd<=0){
           a.cd=d.cd*1.4;
-          damagePiece(wall, d.dmg*0.6);
+          damagePiece(wall, d.wdmg||d.dmg*0.6);
           if(Math.hypot(S.pos.x-a.pos.x,S.pos.z-a.pos.z)<9) toast(BEAST[a.type].name+' is tearing at your wall');
         }
         a.timer=Math.min(a.timer,0.5);
