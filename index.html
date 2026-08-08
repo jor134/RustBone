@@ -319,13 +319,12 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <button class="abtn" id="b_jump">Jump</button>
     <button class="abtn big" id="b_hit">Strike</button>
     <button class="abtn" id="b_use">Use</button>
-    <button class="abtn" id="b_rot">Turn</button>
+    <button class="abtn" id="b_rot">Cam</button>
   </div>
   <div id="sysbtns">
     <button class="sbtn" id="s_build">Build</button>
     <button class="sbtn" id="s_craft">Craft</button>
     <button class="sbtn" id="s_pack">Pack</button>
-    <button class="sbtn" id="s_view">Cam</button>
     <button class="sbtn" id="s_menu">Menu</button>
     <button class="sbtn" id="s_snd">Snd</button>
   </div>
@@ -3235,7 +3234,6 @@ function setupInput(){
   $('s_build').addEventListener('click',toggleBuild);
   $('s_craft').addEventListener('click',()=>togglePanel('p_craft'));
   $('s_pack').addEventListener('click',()=>togglePanel('p_pack'));
-  $('s_view').addEventListener('click',cycleCam);
   $('s_menu').addEventListener('click',openMenu);
   const sb=$('s_snd'); if(sb) sb.addEventListener('click',audioToggle);
   const tx=$('tut_x'); if(tx) tx.addEventListener('click',tutSkip);
@@ -4046,7 +4044,7 @@ function toggleBuild(){
   S.buildMode=!S.buildMode;
   $('s_build').classList.toggle('on',S.buildMode);
   $('buildbar').style.display=S.buildMode?'flex':'none';
-  $('b_rot').textContent=S.buildMode?'Turn':'Cam';
+  const rb=$('b_rot'); if(rb) rb.textContent=S.buildMode?'Turn':'Cam';
   if(!S.buildMode && ghostMesh){ scene.remove(ghostMesh); ghostMesh=null; setPrompt(null); }
   renderBuildBar();
 }
