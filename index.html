@@ -50,9 +50,14 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
   background:#0b1519;border:1px solid #2c4048;border-radius:3px;color:var(--bone);outline:none}
 .field input:focus{border-color:var(--rust)}
 .seg{display:flex;gap:6px;width:100%;max-width:330px}
-.seg button{flex:1;padding:10px 0;font-size:11px;letter-spacing:.16em;text-transform:uppercase;
-  background:#0b1519;border:1px solid #2c4048;border-radius:3px;color:#8d9aa1}
-.seg button.on{background:var(--rust);border-color:var(--rust);color:#120a06;font-weight:600}
+.seg button{flex:1;padding:9px 4px;background:#0b1519;border:1px solid #2c4048;
+  border-radius:3px;color:#8d9aa1;line-height:1.25}
+.seg button b{display:block;font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  font-weight:600}
+.seg button small{display:block;font-size:8px;letter-spacing:.14em;text-transform:uppercase;
+  color:#5e6f77;margin-top:2px}
+.seg button.on{background:var(--rust);border-color:var(--rust);color:#120a06}
+.seg button.on small{color:#4a1e0c}
 #play{width:100%;max-width:330px;padding:15px;margin-top:4px;font-size:18px;
   background:var(--rust);color:#130b07;border-radius:3px;letter-spacing:.08em}
 #play:active{transform:translateY(1px)}
@@ -269,9 +274,10 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
   <div class="field"><label class="lbl">Island code — share it to play together</label><input id="i_room" maxlength="6" placeholder="REEF01"></div>
   <div class="field"><label class="lbl">Crew tag — same tag = allies, shared fort</label><input id="i_team" maxlength="6" placeholder="leave blank to go solo"></div>
   <div class="seg">
-    <button id="q_easy">Castaway</button>
-    <button id="q_hard" class="on">Marooned</button>
+    <button id="q_hard" class="on"><b>Marooned</b><small>The long game</small></button>
+    <button id="q_easy"><b>Castaway</b><small>Arcade ×2</small></button>
   </div>
+  <div id="modenote" class="note" style="margin-top:-4px">Marooned: hunger and thirst bite harder. Arcade: double resources per strike, wildlife dies twice as fast, bosses take ten fire arrows instead of twenty.</div>
   <button id="play" class="dsp">WASH ASHORE</button>
   <button id="sndbtn" class="ghostbtn" style="display:block">Sound on</button>
   <button id="installbtn" class="ghostbtn">Add to home screen</button>
@@ -409,6 +415,12 @@ const CFG = {
 
 /* ---------------- SMALL HELPERS ---------------- */
 const clamp = (v,a,b)=> v<a?a:(v>b?b:v);
+// Marooned is the long game and keeps the harsher survival drain.
+// Castaway is arcade: double yields, double damage dealt to wildlife,
+// half the fire arrows to put a boss down. Survival drain stays gentle.
+function ARC(){ return S.hard ? 1 : 2; }
+function bossMax(){ return S.hard ? FIRE_ARROWS_TO_KILL : FIRE_ARROWS_TO_KILL/2; }
+function modeName(){ return S.hard ? 'MAROONED' : 'ARCADE ×2'; }
 const lerp  = (a,b,t)=> a+(b-a)*t;
 const rad   = Math.PI/180;
 const now   = ()=> Date.now();
@@ -2662,12 +2674,12 @@ function bossHit(b){
   spawnBurst(b.pos.x,b.pos.y+2.5,b.pos.z,
     {color:0xff9a3c,n:18,size:0.16,life:1.0,spread:5,up:4,puff:4,puffColor:0x6b6055});
   sfx('flesh'); sfx('beast');
-  if(b.hits>=FIRE_ARROWS_TO_KILL){ bossDown(b); }
-  else toast(b.name+' — '+b.hits+'/'+FIRE_ARROWS_TO_KILL+' fire arrows');
+  if(b.hits>=bossMax()){ bossDown(b); }
+  else toast(b.name+' — '+b.hits+'/'+bossMax()+' fire arrows');
   pushBossState();
 }
 function bossDown(b){
-  b.dead=true; b.hits=FIRE_ARROWS_TO_KILL;
+  b.dead=true; b.hits=bossMax();
   if(b.mesh){ scene.remove(b.mesh); b.mesh=null; }
   add(b.part,1);
   sfx('beastdie'); sfx('chime');
@@ -3148,7 +3160,7 @@ function harvestAnimal(a){
   if(a.harvested) return;
   a.harvested=true;
   const d=BEAST[a.type].drop; const parts=[];
-  for(const k in d){ add(k,d[k]); parts.push(d[k]+'× '+ITEMS[k].n); }
+  for(const k in d){ const n=d[k]*ARC(); add(k,n); parts.push(n+'× '+ITEMS[k].n); }
   toast('Harvested: '+parts.join(', '));
   a.mesh.scale.setScalar(0.6);
 }
@@ -3467,9 +3479,10 @@ function updateArrows(dt){
         if(!an.alive) continue;
         if(Math.hypot(an.pos.x-a.pos.x,an.pos.z-a.pos.z)<0.8 &&
            a.pos.y>an.pos.y-0.1 && a.pos.y<an.pos.y+1.8){
-          an.hp-=a.dmg; an.hurt=2.4; an.state='chase'; flashHit(an);
-          if(hostId && hostId!==S.pid && !rtcSendTo(hostId,{t:'a',a:an.id,d:a.dmg},true))
-            queueAHit(an.id,a.dmg);
+          const adm=a.dmg*ARC();
+          an.hp-=adm; an.hurt=2.4; an.state='chase'; flashHit(an);
+          if(hostId && hostId!==S.pid && !rtcSendTo(hostId,{t:'a',a:an.id,d:adm},true))
+            queueAHit(an.id,adm);
           if(an.hp<=0) killAnimal(an);
           toast('Arrow strikes the '+BEAST[an.type].name.toLowerCase());
           done=true; break;
@@ -3538,10 +3551,11 @@ function doStrike(){
     if(d>=0&&d<bd){ bd=d; best=a; }
   }
   if(best){
-    best.hp-=t.dmg; best.hurt=2.4; best.state='chase';
+    const bdmg=t.dmg*ARC();
+    best.hp-=bdmg; best.hurt=2.4; best.state='chase';
     flashHit(best);
-    if(hostId && hostId!==S.pid && !rtcSendTo(hostId,{t:'a',a:best.id,d:t.dmg},true))
-      queueAHit(best.id,t.dmg);
+    if(hostId && hostId!==S.pid && !rtcSendTo(hostId,{t:'a',a:best.id,d:bdmg},true))
+      queueAHit(best.id,bdmg);
     sfx('flesh'); sfx('beast');
     if(best.hp<=0) killAnimal(best);
     wearTool();
@@ -3612,7 +3626,7 @@ function flashHit(a){
   setTimeout(()=>a.mesh.traverse(o=>{ if(o.material&&o.material.emissive) o.material.emissive.setHex(0); }),110);
 }
 function gather(n,t){
-  const mult = (t.best===n.kind)? t.gather : 1;
+  const mult = ((t.best===n.kind)? t.gather : 1) * ARC();
   const hy = n.y + (n.kind==='tree'?1.7 : n.kind==='palm'?1.5 : n.kind==='rock'?0.7 : 0.6);
   if(n.kind==='tree')      spawnBurst(n.x,hy,n.z,{color:0x8a6540,n:9,size:0.075,life:0.75});
   else if(n.kind==='palm') spawnBurst(n.x,hy,n.z,{color:0x7d6340,n:7,size:0.07,life:0.75});
@@ -3620,8 +3634,8 @@ function gather(n,t){
   else                     spawnBurst(n.x,hy,n.z,{color:0x6f8f45,n:8,size:0.06,life:1.1,grav:3.2,up:1.6});
   if(n.kind==='tree'){ add('wood',2*mult); }
   else if(n.kind==='palm'){ add('wood',1*mult); }
-  else if(n.kind==='rock'){ add('stone',2*mult); if(Math.random()<0.4) add('flint',1); }
-  else if(n.kind==='bush'){ add('fiber',3); }
+  else if(n.kind==='rock'){ add('stone',2*mult); if(Math.random()<0.4) add('flint',1*ARC()); }
+  else if(n.kind==='bush'){ add('fiber',3*ARC()); }
   n.hp-=1;
   if(n.hp<=0){
     const fy=n.y+(n.kind==='rock'?0.6:1.2);
@@ -3632,17 +3646,17 @@ function gather(n,t){
       spawnBurst(n.x,fy,n.z,{color:0x6b5236,n:18,size:0.1,life:1.1,spread:4.2,up:3.6,
                              puff:4,puffColor:0x9fb47c});
     hideNode(n);
-    if(n.kind==='tree') add('fiber',2);
-    if(n.kind==='palm'){ add('coco',2); toast('Coconuts — the only fresh water on this rock'); }
+    if(n.kind==='tree') add('fiber',2*ARC());
+    if(n.kind==='palm'){ add('coco',2*ARC()); toast('Coconuts — the only fresh water on this rock'); }
   }
 }
 function lootCrate(c){
   c.looted=true; c.lootedAt=S.t;
   c.mesh.traverse(o=>{ if(o.material&&o.material.color) o.material.color.multiplyScalar(0.45); });
   const roll=Math.random();
-  add('scrap',3+Math.floor(Math.random()*3));
-  add('rope',1+Math.floor(Math.random()*2));
-  if(roll>0.6) add('flint',3);
+  add('scrap',(3+Math.floor(Math.random()*3))*ARC());
+  add('rope',(1+Math.floor(Math.random()*2))*ARC());
+  if(roll>0.6) add('flint',3*ARC());
   if(roll>0.85){ add('spear',1); toast('A spear in the crate'); }
   spawnBurst(c.x,heightAt(c.x,c.z)+0.7,c.z,{color:0x9c7a3d,n:10,size:0.07,life:0.7,puff:2});
   sfx('chime');
@@ -4142,7 +4156,7 @@ function updateHUD(){
       if(nx && nx.wait===0){
         const b=nx.b, d=Math.round(Math.hypot(b.pos.x-S.pos.x,b.pos.z-S.pos.z));
         bw.style.display='block';
-        $('v_boss').textContent = b.name+' — '+b.hits+'/'+FIRE_ARROWS_TO_KILL+
+        $('v_boss').textContent = b.name+' — '+b.hits+'/'+bossMax()+
           (b.mesh&&b.mesh.visible?('  ·  '+d+'m'):'');
       }else if(nx){
         bw.style.display='block';
@@ -5395,7 +5409,7 @@ async function startRun(){
   S.team=($('i_team').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6);
   newRunIdentity();
   charIdentity();
-  $('v_room').textContent=S.room;
+  $('v_room').textContent=S.room+(S.hard?'':' · ARCADE');
 
   await joinWorld();
   await loadVault();
@@ -5463,8 +5477,14 @@ function boot(){
   $('i_room').value=LS.get('sb_room')||'';
   $('i_team').value=LS.get('sb_team')||'';
 
-  $('q_easy').addEventListener('click',()=>{S.hard=false;$('q_easy').classList.add('on');$('q_hard').classList.remove('on');});
-  $('q_hard').addEventListener('click',()=>{S.hard=true;$('q_hard').classList.add('on');$('q_easy').classList.remove('on');});
+  function setMode(hard){
+    S.hard=hard; LS.set('sb_mode',hard?'hard':'arcade');
+    $('q_hard').classList.toggle('on',hard);
+    $('q_easy').classList.toggle('on',!hard);
+  }
+  setMode(LS.get('sb_mode')!=='arcade');
+  $('q_easy').addEventListener('click',()=>setMode(false));
+  $('q_hard').addEventListener('click',()=>setMode(true));
 
   $('play').addEventListener('click',()=>{
     LS.set('sb_name',$('i_name').value);

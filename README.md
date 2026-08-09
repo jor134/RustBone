@@ -193,3 +193,19 @@ rocks for flint, craft a spear, craft an axe, find a coconut, lay a floor, raise
 build a firepit, eat something cooked. Each step just watches your inventory — nothing is
 gated or blocked, and the card can be skipped. It is remembered per browser, so it never
 appears twice.
+
+## Modes
+
+**Marooned — the long game.** Hunger and thirst drain 1.35x. Water runs dry in under seven
+minutes, which is less than one in-game day, so the coconut loop is mandatory before dark.
+
+**Castaway — Arcade x2.** Gentler survival drain, and:
+
+- every strike yields double resources (gathering, animal drops, crates)
+- you deal double damage to wildlife
+- bosses fall to ten fire arrows instead of twenty
+
+Damage to other players is **not** scaled. Arcade is meant to shorten the grind, not turn
+a mode selection into a PvP advantage on a shared island.
+
+The choice persists per browser and shows in the HUD next to the island code.
