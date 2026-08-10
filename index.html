@@ -2492,7 +2492,7 @@ const FIRE_ARROWS_TO_KILL=20;
 const BOSSES=[
   {id:'trex', name:'BONECREST TYRANT', part:'motor',
    win:[0.20,0.34], when:'early morning', where:'the radio mast',
-   dmg:44, reach:5.4, cd:2.2, hits:0, dead:false, mesh:null, pos:new THREE.Vector3(),
+   dmg:44, reach:5.4, cd:2.2, spd:7.1, patrol:3.2, hits:0, dead:false, mesh:null, pos:new THREE.Vector3(),
    yaw:0, cool:0},
   {id:'meg',  name:'THE SALT MAW', part:'radio',
    win:[0.48,0.66], when:'afternoon', where:'the open water',
@@ -2514,6 +2514,27 @@ function bossHome(b){
   return {x:0, z:0, r:CFG.WORLD*0.455};
 }
 
+// smallest radius on this bearing where the water is genuinely deep
+function seaRadius(ang){
+  const cs=Math.cos(ang), sn=Math.sin(ang);
+  for(let r=CFG.WORLD*0.18; r<CFG.WORLD*0.49; r+=2.5){
+    if(heightAt(cs*r, sn*r) < -1.6) return r+6;
+  }
+  return CFG.WORLD*0.46;
+}
+// last-resort guard: anything over land gets snapped straight out to the sea
+// line on its own bearing. Nudging outward step by step failed from the exact
+// centre of the island, where the bearing is undefined.
+function keepInWater(p){
+  if(heightAt(p.x,p.z) <= -1.6) return;
+  let ang=Math.atan2(p.z,p.x);
+  if(!isFinite(ang) || (Math.abs(p.x)<0.001 && Math.abs(p.z)<0.001)) ang=0;
+  const r=seaRadius(ang);
+  p.x=Math.cos(ang)*r; p.z=Math.sin(ang)*r;
+  if(heightAt(p.x,p.z) > -1.6){          // pathological bearing: go to open sea
+    p.x=Math.cos(ang)*CFG.WORLD*0.47; p.z=Math.sin(ang)*CFG.WORLD*0.47;
+  }
+}
 function bossMesh(id){
   const g=new THREE.Group();
   if(id==='trex'){
@@ -2671,19 +2692,24 @@ function updateBosses(dt){
     const hunts = dist < (b.id==='meg'?70:52);
 
     if(b.id==='meg'){
-      // circles the island; only a threat if you are in the water
+      // circles the island; only a threat if you are in the water.
+      // It used to close on the player by radius alone, which drove it straight
+      // under the island whenever you stood inland — hence a shark under the map.
       const ang = S.t*0.055;
       let tx=Math.cos(ang)*home.r, tz=Math.sin(ang)*home.r;
-      if(hunts && S.pos.y<2.2){
-        const near=Math.hypot(S.pos.x,S.pos.z);
+      const wading = S.pos.y<2.2;
+      if(hunts && wading){
         const a2=Math.atan2(S.pos.z,S.pos.x);
-        tx=Math.cos(a2)*Math.max(near+4,CFG.WORLD*0.30);
-        tz=Math.sin(a2)*Math.max(near+4,CFG.WORLD*0.30);
+        const r=Math.max(seaRadius(a2), Math.hypot(S.pos.x,S.pos.z)+4);
+        tx=Math.cos(a2)*r; tz=Math.sin(a2)*r;
       }
       const dx=tx-b.pos.x, dz=tz-b.pos.z, d=Math.hypot(dx,dz)||1;
-      const spd=hunts?11:6;
+      const spd=(hunts&&wading)?11:6;
       b.pos.x+=dx/d*Math.min(spd*dt,d); b.pos.z+=dz/d*Math.min(spd*dt,d);
-      b.pos.y = -0.9 + Math.sin(S.t*0.5)*0.9;         // breaches and submerges
+      keepInWater(b.pos);
+      // stays under the surface but above the seabed, fin breaking the top
+      const gh=heightAt(b.pos.x,b.pos.z);
+      b.pos.y = clamp(-0.9 + Math.sin(S.t*0.5)*0.9, gh+1.7, 0.35);
       b.yaw=Math.atan2(dx,dz);
       if(b.mesh.userData.tail) b.mesh.userData.tail.rotation.y=Math.sin(S.t*2.6)*0.45;
       if(b.mesh.userData.jaw)  b.mesh.userData.jaw.rotation.x=0.2+Math.sin(S.t*1.6)*0.2;
@@ -2718,7 +2744,7 @@ function updateBosses(dt){
       if(hunts){ tx=S.pos.x; tz=S.pos.z; }
       else{ const ang=S.t*0.18; tx=home.x+Math.cos(ang)*home.r; tz=home.z+Math.sin(ang)*home.r; }
       const dx=tx-b.pos.x, dz=tz-b.pos.z, d=Math.hypot(dx,dz)||1;
-      const spd=hunts?9.5:4.2;
+      const spd=hunts?(b.spd||7.1):(b.patrol||3.2);
       if(d>b.reach*0.8){
         b.pos.x+=dx/d*Math.min(spd*dt,d);
         b.pos.z+=dz/d*Math.min(spd*dt,d);
@@ -2834,13 +2860,50 @@ function removeDrop(id){
 }
 function itemsCount(items){ let n=0; for(const k in items) n+=items[k]; return n; }
 
+// Where a cache should actually land.
+//
+// It used to drop at the exact surface you died on. Die on an upper storey and
+// the chest sat at that height — then five minutes later the derelict fort
+// despawned out from under it and left it hovering three metres up with nothing
+// to climb. It now always goes to bare ground, and steps clear of the building
+// footprint so a sealed ground floor cannot swallow it either.
+function cacheSpot(x,z){
+  const onFort=(px,pz)=>{
+    let f=false;
+    S.builds.forEach(r=>{
+      if(f) return;
+      if(r.t!=='f' && r.t!=='r') return;
+      if(Math.abs(px-r.gx*C)<C/2+0.5 && Math.abs(pz-r.gz*C)<C/2+0.5) f=true;
+    });
+    return f;
+  };
+  let bx=x, bz=z;
+  if(onFort(bx,bz)){
+    let cx=0, cz=0, n=0;
+    S.builds.forEach(r=>{ if(r.t==='f'){ cx+=r.gx*C; cz+=r.gz*C; n++; } });
+    let ang=Math.random()*6.283;
+    if(n){
+      cx/=n; cz/=n;
+      const dx=x-cx, dz=z-cz;
+      if(Math.hypot(dx,dz)>0.4) ang=Math.atan2(dz,dx);   // straight out of the fort
+    }
+    for(let d=1.5; d<=44; d+=1.5){
+      const tx=x+Math.cos(ang)*d, tz=z+Math.sin(ang)*d;
+      if(!onFort(tx,tz) && heightAt(tx,tz)>0.7 && Math.hypot(tx,tz)<CFG.WORLD*0.46){
+        bx=tx; bz=tz; break;
+      }
+    }
+  }
+  return {x:bx, z:bz, y:heightAt(bx,bz)};
+}
 async function dropCache(){
   const items={};
   for(const k in S.inv){ if(S.inv[k]>0) items[k]=S.inv[k]; }
   if(!itemsCount(items)) return null;
   const id=S.pid+'_'+Date.now().toString(36);
-  const rec={id:id,x:+S.pos.x.toFixed(2),y:+surfaceY(S.pos.x,S.pos.z,S.pos.y).toFixed(2),
-             z:+S.pos.z.toFixed(2),o:S.pid,name:S.name,items:items,at:now()};
+  const spot=cacheSpot(S.pos.x,S.pos.z);
+  const rec={id:id,x:+spot.x.toFixed(2),y:+spot.y.toFixed(2),z:+spot.z.toFixed(2),
+             o:S.pid,name:S.name,items:items,at:now()};
   spawnDrop(rec);
   S.myDrop=rec;
   rtcSend({t:'d',op:'add',r:rec},true);
@@ -4291,7 +4354,7 @@ function die(why){
   S.vaultDer=now(); saveVault();
   dropCache().then(rec=>{
     $('d_fort').textContent = (rec
-      ? 'Everything you carried is in a marked chest where you fell. Anyone can take it. '
+      ? 'Everything you carried is in a marked chest on open ground below where you fell. Anyone can take it. '
       : '') + ($('d_fort').textContent||'');
   });
   $('death').style.display='flex';
