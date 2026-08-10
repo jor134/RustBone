@@ -174,6 +174,12 @@ takes exactly 20. Fire arrows cost 20 scrap + 20 rope, workbench only.
 
 With all three parts, `Use` at the wreck rebuilds the boat and ends the run.
 
+Only the player who lands the killing blow picks a part up. Once **all three** are dead
+the island is finished for everyone on it, so every character's chest is topped up to a
+full set — crewmates who fought but did not loot, and anyone who died holding one, can
+still walk to the wreck. It fills only what is missing and never duplicates, and it will
+not write into a vault it has not successfully read.
+
 ### Tuning the grind
 
 Fire arrows cost 5 scrap + 5 rope. Sixty of them is 300 scrap and 300 rope (900 fibre) —

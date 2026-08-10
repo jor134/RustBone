@@ -1454,7 +1454,7 @@ const S = {
   hp:100, food:100, water:100, stam:100, chill:0, chillWarned:false,
   inv:{}, hotIdx:0, equipped:'hands',
   charKey:'', vault:{}, vaultDer:0, vaultLoaded:false, fortLoaded:false, broken:new Set(),
-  ammo:'arrow', escaped:false, tut:0,
+  ammo:'arrow', escaped:false, tut:0, partsPending:false, partsAnnounced:false,
   dur:{},
   camDist:3.1, camTight:false,
   inRun:false, vrOK:false,
@@ -2782,6 +2782,7 @@ function bossDown(b){
   toast(b.name+' falls. It carried '+ITEMS[b.part].n+'.');
   S.bossKills=(S.bossKills||0)+1;
   pushBossState();
+  grantEndgameParts();
   const left=BOSSES.filter(x=>!x.dead).length;
   if(left) toast(left+' still breathe on this island.');
   else toast('All three are down. The wreck can be made to float.');
@@ -2803,8 +2804,33 @@ function applyBossState(o){
       if(b.mesh){ scene.remove(b.mesh); b.mesh=null; }
     }
   });
+  grantEndgameParts();
 }
 function haveAllParts(){ return BOSSES.every(b=>have(b.part)>0); }
+function allBossesDown(){ return BOSSES.every(b=>b.dead); }
+// Only the player who lands the killing blow picks a part up. Once all three
+// are down the island is finished for everyone on it, so every chest gets a set
+// — crewmates who fought and did not loot, and anyone who died holding one,
+// can still walk to the wreck. Tops up what is missing, never duplicates.
+function grantEndgameParts(){
+  if(!allBossesDown()) return;
+  if(!S.vaultLoaded){ S.partsPending=true; return; }
+  S.partsPending=false;
+  const added=[];
+  BOSSES.forEach(b=>{
+    const held=(S.inv[b.part]||0)+(S.vault[b.part]||0);
+    if(held<1){ S.vault[b.part]=(S.vault[b.part]||0)+1; added.push(ITEMS[b.part].n); }
+  });
+  if(!S.partsAnnounced){
+    S.partsAnnounced=true;
+    toast('All three are down. The salvage is in your chest.');
+    sfx('chime');
+  }
+  if(added.length){
+    saveVault(); refreshHotbar();
+    toast('Recovered into your chest: '+added.join(', '));
+  }
+}
 function nextBossWindow(){
   // the soonest boss you could go and fight
   let best=null,bestWait=99;
@@ -4297,7 +4323,9 @@ function updateHUD(){
     const live=BOSSES.filter(b=>!b.dead);
     if(!live.length){
       bw.style.display='block';
-      $('v_boss').textContent = haveAllParts()?'RETURN TO THE WRECK':'ALL THREE ARE DOWN';
+      $('v_boss').textContent = haveAllParts()
+        ? 'RETURN TO THE WRECK'
+        : 'ALL THREE DOWN — PARTS ARE IN YOUR CHEST';
     }else{
       const nx=nextBossWindow();
       if(nx && nx.wait===0){
@@ -4708,6 +4736,7 @@ async function slowSync(){
   }
   // pull boss state
   try{ applyBossState(await Net.get(bossKey())); }catch(e){}
+  if(S.partsPending) grantEndgameParts();
 
   // pull caches
   try{
@@ -5565,6 +5594,7 @@ async function startRun(){
 
   await joinWorld();
   await loadVault();
+  try{ applyBossState(await Net.get(bossKey())); }catch(e){}
 
   if(!worldBuilt){
     buildHeightmap(S.seed);
@@ -5599,7 +5629,7 @@ function resetRunState(){
   S.hp=100; S.food=100; S.water=100; S.stam=100; S.chill=0; S.chillWarned=false;
   S.inv={wood:0,fiber:0,stone:0}; S.equipped='hands'; S.hotIdx=0;
   S.kills=0; S.built=0; S.day=1; S.tod=0.27;
-  S.ammo='arrow'; S.escaped=false;
+  S.ammo='arrow'; S.escaped=false; S.partsAnnounced=false; S.partsPending=false;
   S.tut = LS.get('sb_tut')==='1' ? -1 : 0;
   tutRender();
   $('win').style.display='none';
