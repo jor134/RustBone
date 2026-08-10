@@ -113,19 +113,26 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
 #b_stam i{background:linear-gradient(90deg,#3d6640,#7bbd80)}
 #b_warm i{background:linear-gradient(90deg,#5a2a10,#e8a04a)}
 
-#tut{position:absolute;left:10px;top:calc(env(safe-area-inset-top) + 132px);
-  width:min(200px,52vw);display:none;pointer-events:auto;
-  background:linear-gradient(180deg,rgba(24,40,48,.94),rgba(16,28,34,.94));
-  border:1px solid #2c4048;border-left:2px solid var(--rust);border-radius:3px;
-  padding:8px 9px 9px}
-#tut .tut_h{display:flex;justify-content:space-between;font-size:8px;
-  letter-spacing:.2em;text-transform:uppercase;color:#7f8b91;margin-bottom:4px}
-#tut_t{font-size:12px;color:var(--bone);font-weight:600;line-height:1.3}
-#tut_d{font-size:10px;color:#9fabb1;line-height:1.5;margin-top:4px}
-#tut_x{margin-top:7px;padding:4px 8px;font-size:8px;letter-spacing:.16em;
+/* Objectives sit across the very top — thumbs live at the bottom of a phone,
+   so anything below the fold gets covered by a hand mid-play. */
+#tut{position:absolute;left:8px;right:8px;top:calc(env(safe-area-inset-top) + 6px);
+  display:none;pointer-events:auto;align-items:center;gap:9px;
+  background:linear-gradient(180deg,rgba(24,40,48,.95),rgba(14,26,32,.95));
+  border:1px solid #2c4048;border-top:2px solid var(--rust);border-radius:3px;
+  padding:7px 9px;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+#tut_n{flex:0 0 auto;font-size:9px;letter-spacing:.1em;color:#130b07;
+  background:var(--rust);border-radius:2px;padding:3px 6px;font-weight:600}
+#tut .tut_body{flex:1;min-width:0}
+#tut_t{font-size:12px;color:var(--bone);font-weight:600;line-height:1.25}
+#tut_d{font-size:10px;color:#9fabb1;line-height:1.45;margin-top:2px}
+#tut_x{flex:0 0 auto;padding:5px 8px;font-size:8px;letter-spacing:.16em;
   text-transform:uppercase;background:#0b1519;border:1px solid #2c4048;
   border-radius:2px;color:#7f8b91}
 #tut_x:active{border-color:var(--rust);color:var(--rust)}
+/* push the rest of the HUD clear of the banner while it is up */
+#hud.tuton #gauges{top:calc(env(safe-area-inset-top) + 76px)}
+#hud.tuton #compass{top:calc(env(safe-area-inset-top) + 74px)}
+#hud.tuton #topright{top:calc(env(safe-area-inset-top) + 76px)}
 #topright{position:absolute;right:10px;top:calc(env(safe-area-inset-top) + 8px);text-align:right}
 #topright div{font-size:10px;letter-spacing:.12em;color:#8d9aa1;margin-bottom:3px}
 #topright b{color:var(--bone);font-weight:600}
@@ -300,9 +307,11 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
     <div class="gauge"><div class="gl"><span>Warmth</span><span id="v_warm">100</span></div><div class="bar" id="b_warm"><i></i></div></div>
   </div>
   <div id="tut">
-    <div class="tut_h"><span>Getting ashore</span><span id="tut_n">1/10</span></div>
-    <div id="tut_t">—</div>
-    <div id="tut_d">—</div>
+    <div id="tut_n">1/10</div>
+    <div class="tut_body">
+      <div id="tut_t">—</div>
+      <div id="tut_d">—</div>
+    </div>
     <button id="tut_x">Skip</button>
   </div>
   <div id="compass"><div id="comptrack"></div></div>
@@ -1010,7 +1019,12 @@ function updateViewModel(dt,speed){
   }
   vmArmL.rotation.x = 0.34 - Math.sin(vmWalk)*0.06;
   vmArmL.visible = !S.buildMode;
-  if(vmTool&&vmTool.userData.nock) vmTool.userData.nock.visible=have('arrow')>0;
+  if(vmTool&&vmTool.userData.nock){
+    const fa = S.ammo==='firearrow' && have('firearrow')>0;
+    vmTool.userData.nock.visible=have(S.ammo)>0;
+    if(vmTool.userData.nockFire) vmTool.userData.nockFire.visible=fa;
+    flickerNock(vmTool,S.t,3.1);
+  }
   if(vmTool&&vmTool.userData.flame){
     const k=0.86+Math.sin(S.t*16)*0.12;
     vmTool.userData.flame.scale.set(k,1+Math.sin(S.t*11)*0.2,k);
@@ -1745,7 +1759,18 @@ function toolModel(id){
     const afl=new THREE.Mesh(new THREE.PlaneGeometry(0.07,0.12),
       new THREE.MeshBasicMaterial({color:0xc1502e,side:THREE.DoubleSide}));
     afl.position.z=0.26; nk.add(afl);
-    g.userData.nock=nk;
+    // pitch-soaked head, lit only when fire ammunition is nocked
+    const wrapF=new THREE.Mesh(Cyl(0.032,0.026,0.09,6),toon(0x3a2c1c));
+    wrapF.rotation.x=Math.PI/2; wrapF.position.z=-0.28; nk.add(wrapF);
+    const fl=new THREE.Group(); fl.position.z=-0.33; nk.add(fl);
+    const flame=new THREE.Mesh(Cone(0.075,0.26,6),
+      new THREE.MeshBasicMaterial({color:0xffa838,transparent:true,opacity:0.92}));
+    flame.rotation.x=-Math.PI/2; fl.add(flame);
+    const fcore=new THREE.Mesh(Cone(0.038,0.14,5),new THREE.MeshBasicMaterial({color:0xfff2cc}));
+    fcore.rotation.x=-Math.PI/2; fcore.position.z=-0.02; fl.add(fcore);
+    fl.visible=false;
+    g.userData.nock=nk; g.userData.nockFire=fl;
+    g.userData.nockFlame=flame; g.userData.nockCore=fcore;
 
     g.userData.restA=[-0.18,0,-0.22];   // held nearly upright in a hanging hand
     g.userData.restV=[-0.10,0.62,-0.12];// canted across the screen in first person
@@ -1775,9 +1800,17 @@ function setAvatarTool(av,id){
     u.hand.add(m); u.tool=m;
   }
 }
-function setNock(av,ammo){
+function setNock(av,ammo,fire){
   const t=av.userData.tool;
-  if(t && t.userData.nock) t.userData.nock.visible = ammo>0;
+  if(!t) return;
+  if(t.userData.nock) t.userData.nock.visible = ammo>0;
+  if(t.userData.nockFire) t.userData.nockFire.visible = !!fire && ammo>0;
+}
+function flickerNock(tool,t,seed){
+  if(!tool||!tool.userData.nockFire||!tool.userData.nockFire.visible) return;
+  const k=0.82+Math.sin(t*19+seed)*0.14+Math.sin(t*43+seed)*0.06;
+  tool.userData.nockFlame.scale.set(k,k,1+Math.sin(t*13+seed)*0.22);
+  tool.userData.nockCore.scale.set(k,k,k);
 }
 // The torch light lives in the scene, not on the avatar: three skips lights
 // parented to an invisible object, so a child light would die in first person.
@@ -2232,13 +2265,48 @@ function wallAt(x,z,feetY,radius){
   });
   return hitId;
 }
-// is there a wall between two points? stops beasts biting through a wall
-function wallBetween(ax,az,ay,bx,bz){
-  for(let i=1;i<=5;i++){
-    const k=i/6;
-    if(wallAt(ax+(bx-ax)*k, az+(bz-az)*k, ay, 0.05)) return true;
-  }
-  return false;
+// 2D segment intersection
+function segHit(ax,az,bx,bz,cx,cz,dx,dz){
+  const r1=bx-ax, r2=bz-az, s1=dx-cx, s2=dz-cz;
+  const den=r1*s2-r2*s1;
+  if(Math.abs(den)<1e-9) return false;
+  const t=((cx-ax)*s2-(cz-az)*s1)/den;
+  const u=((cx-ax)*r2-(cz-az)*r1)/den;
+  return t>=-0.001 && t<=1.001 && u>=-0.001 && u<=1.001;
+}
+// Which piece stands between two points, if any.
+//
+// This used to sample five points along the line and ask whether each was
+// inside a wall. A wall is 0.26 m thick and the samples were often more than a
+// metre apart, so at close range the test simply stepped over the wall and the
+// beast bit you through it. Now it intersects the wall's centre line properly.
+function wallBlocking(ax,az,ay,bx,bz,by){
+  let hit=null;
+  const eyeLo=Math.min(ay,by)+0.35, eyeHi=Math.max(ay,by)+1.5;
+  S.builds.forEach((r,id)=>{
+    if(hit) return;
+    if(r.t!=='w'&&r.t!=='d'&&r.t!=='dr'&&r.t!=='rl'&&r.t!=='p') return;
+    const top=r.y+pieceTop(r);
+    if(eyeHi < r.y+0.1 || eyeLo > top-0.1) return;      // above it or below it
+    if(r.t==='dr' && r.op) return;                       // an open door is a hole
+    if(r.t==='rl' && eyeLo > r.y+0.95) return;           // you can reach over a rail
+    const cx=r.gx*C, cz=r.gz*C;
+    if(r.t==='p'){
+      const px=cx+(r.s===0||r.s===3?C/2:-C/2), pz=cz+(r.s<2?C/2:-C/2);
+      if(segHit(ax,az,bx,bz,px-0.2,pz,px+0.2,pz)||
+         segHit(ax,az,bx,bz,px,pz-0.2,px,pz+0.2)) hit=id;
+      return;
+    }
+    const off=sideOffset(r.s), wx=cx+off[0], wz=cz+off[1], half=C/2;
+    const alongX=(r.s===1||r.s===3);
+    const x1=alongX?wx-half:wx, x2=alongX?wx+half:wx;
+    const z1=alongX?wz:wz-half,  z2=alongX?wz:wz+half;
+    if(segHit(ax,az,bx,bz,x1,z1,x2,z2)) hit=id;
+  });
+  return hit;
+}
+function wallBetween(ax,az,ay,bx,bz,by){
+  return !!wallBlocking(ax,az,ay,bx,bz,by===undefined?ay:by);
 }
 // projectile occlusion: exact point test, and a Window is an opening
 function shotBlocked(x,y,z){
@@ -3040,7 +3108,7 @@ function updateAnimals(dt){
 
     if(a.state==='chase'){
       a.chaseT+=dt;
-      if(wallBetween(a.pos.x,a.pos.z,a.pos.y,S.pos.x,S.pos.z)) a.losT+=dt; else a.losT=0;
+      if(wallBetween(a.pos.x,a.pos.z,a.pos.y,S.pos.x,S.pos.z,S.pos.y)) a.losT+=dt; else a.losT=0;
       if(S.pos.y<0.45) a.waterT+=dt; else a.waterT=0;   // you waded out
 
       let quit=null;
@@ -3085,9 +3153,20 @@ function updateAnimals(dt){
       const dir=toP.normalize();
       a.yaw=Math.atan2(dir.x,dir.z);
       if(dist>d.reach){ spd=d.spd*mul; }
-      else if(a.cd<=0 && !wallBetween(a.pos.x,a.pos.z,a.pos.y,S.pos.x,S.pos.z)){
-        a.cd=d.cd;
-        hurtPlayer(d.dmg, d.name+' hits you');
+      else if(a.cd<=0){
+        const wall=wallBlocking(a.pos.x,a.pos.z,a.pos.y,S.pos.x,S.pos.z,S.pos.y);
+        const upstairs=Math.abs(a.pos.y-S.pos.y)>2.2;
+        if(wall){
+          // it cannot reach you, so it works on what is in the way
+          a.cd=d.cd*1.4;
+          damagePiece(wall, d.wdmg||d.dmg*0.6);
+          if(dist<12) toast(d.name+' is tearing at your wall');
+        }else if(upstairs){
+          a.cd=d.cd;      // it can see you but it cannot climb
+        }else{
+          a.cd=d.cd;
+          hurtPlayer(d.dmg, d.name+' hits you');
+        }
       }
     } else if(a.state==='return'){
       const dx=a.home.x-a.pos.x, dz=a.home.z-a.pos.z, dd=Math.hypot(dx,dz);
@@ -3870,9 +3949,14 @@ function tutSkip(){
   const el=$('tut'); if(el) el.style.display='none';
 }
 function tutRender(){
-  const el=$('tut'); if(!el) return;
-  if(S.tut<0||S.tut>=TUT.length){ el.style.display='none'; return; }
-  el.style.display='block';
+  const el=$('tut'), hud=$('hud'); if(!el) return;
+  if(S.tut<0||S.tut>=TUT.length){
+    el.style.display='none';
+    if(hud) hud.classList.remove('tuton');
+    return;
+  }
+  el.style.display='flex';
+  if(hud) hud.classList.add('tuton');
   $('tut_n').textContent=(S.tut+1)+'/'+TUT.length;
   $('tut_t').textContent=TUT[S.tut].t;
   $('tut_d').textContent=TUT[S.tut].d;
@@ -4361,7 +4445,7 @@ function onRtcMsg(pid,raw){
   if(m.t==='s'){
     if(!pr) return;
     pr.tx=m.x; pr.ty=m.y; pr.tz=m.z; pr.tyaw=m.r;
-    pr.hp=m.h; pr.alive=!!m.al; pr.tool=m.tl;
+    pr.hp=m.h; pr.alive=!!m.al; pr.tool=m.tl; pr.am=m.am;
     pr.av.visible=!!m.al; pr.rtc=true;
   }
   else if(m.t==='h') hurtPlayer(m.d,((pr&&pr.name)||'A castaway')+' cut you down');
@@ -4389,7 +4473,7 @@ function rtcTick(dt){
   if(RTC.sendAcc>0.066){                       // ~15 Hz transforms
     RTC.sendAcc=0;
     rtcSend({t:'s',x:+S.pos.x.toFixed(2),y:+S.pos.y.toFixed(2),z:+S.pos.z.toFixed(2),
-      r:+S.yaw.toFixed(2),h:Math.round(S.hp),al:S.phase==='play'?1:0,tl:S.equipped});
+      r:+S.yaw.toFixed(2),h:Math.round(S.hp),al:S.phase==='play'?1:0,tl:S.equipped,am:S.ammo});
   }
   if(hostId===S.pid && RTC.aiAcc>0.1){         // ~10 Hz beast state from the host
     RTC.aiAcc=0;
@@ -4437,7 +4521,7 @@ async function fastSync(){
   if(S.phase==='menu') return;
   const rec={pid:S.pid,name:S.name,team:S.team,
     x:+S.pos.x.toFixed(2),y:+S.pos.y.toFixed(2),z:+S.pos.z.toFixed(2),
-    yaw:+S.yaw.toFixed(2),hp:Math.round(S.hp),alive:S.phase==='play',tl:S.equipped,
+    yaw:+S.yaw.toFixed(2),hp:Math.round(S.hp),alive:S.phase==='play',tl:S.equipped,am:S.ammo,
     t:now(), hits:S.outHits.filter(h=>now()-h.at<9000),
     ahits:S.outAHits.filter(h=>now()-h.at<9000)};
   await Net.set(K.me(),rec);
@@ -4504,7 +4588,7 @@ function upsertPeer(p){
   }
   pr.name=p.name; pr.team=p.team;
   if(!rtcLinked(p.pid)){                    // direct link wins when it exists
-    pr.hp=p.hp; pr.tool=p.tl;
+    pr.hp=p.hp; pr.tool=p.tl; pr.am=p.am;
     pr.tx=p.x; pr.ty=p.y; pr.tz=p.z; pr.tyaw=p.yaw; pr.alive=p.alive;
   }
   pr.x=pr.x===undefined?p.x:pr.x; pr.y=pr.y===undefined?p.y:pr.y; pr.z=pr.z===undefined?p.z:pr.z;
@@ -5351,10 +5435,14 @@ function frame(time){
       // held torches
       if(selfAvatar){
         setAvatarTool(selfAvatar,S.equipped);
-        setNock(selfAvatar,have('arrow'));
+        const fireAmmo = S.ammo==='firearrow' && have('firearrow')>0;
+        setNock(selfAvatar,have(S.ammo),fireAmmo);
         flickerTool(selfAvatar,t,0);
-        torchLight(S,S.equipped==='torch'&&S.phase==='play',
-                   S.pos.x,S.pos.y+1.45,S.pos.z,t);
+        flickerNock(selfAvatar.userData.tool,t,0);
+        // a lit arrow throws light too, so you can see it is armed
+        const lit = S.phase==='play' &&
+          (S.equipped==='torch' || (S.equipped==='bow' && fireAmmo));
+        torchLight(S,lit,S.pos.x,S.pos.y+1.45,S.pos.z,t);
       }
       for(const d of DROPS){
         if(d.mesh.userData.rag) d.mesh.userData.rag.rotation.y=Math.sin(t*1.7+d.x)*0.5;
@@ -5362,8 +5450,9 @@ function frame(time){
       let i=1;
       S.peers.forEach(pr=>{
         if(pr.tool!==undefined) setAvatarTool(pr.av,pr.tool);
-        setNock(pr.av,1);
+        setNock(pr.av,1,pr.am==='firearrow');
         flickerTool(pr.av,t,i*1.7);
+        flickerNock(pr.av.userData.tool,t,i*1.7);
         torchLight(pr,pr.tool==='torch'&&pr.alive,pr.x,pr.y+1.45,pr.z,t);
         i++;
       });
