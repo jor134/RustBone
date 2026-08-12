@@ -174,6 +174,15 @@ takes exactly 20. Fire arrows cost 20 scrap + 20 rope, workbench only.
 
 With all three parts, `Use` at the wreck rebuilds the boat and ends the run.
 
+**The island does not stay cleared.** Fifteen minutes after the third boss falls they all
+come back with full health, so somebody joining a room later is never locked out of the
+endgame. Parts already in a chest or pack are untouched, so a finished run stays finished.
+
+Reset is driven by a cycle counter in the shared boss key rather than a timestamp race:
+any client may run the reset, a higher cycle is adopted wholesale by everyone else, and
+packets from an older cycle are discarded. Two clients resetting simultaneously converge
+on the same state. Tune with `BOSS_RESET_MS`.
+
 Only the player who lands the killing blow picks a part up. Once **all three** are dead
 the island is finished for everyone on it, so every character's chest is topped up to a
 full set — crewmates who fought but did not loot, and anyone who died holding one, can

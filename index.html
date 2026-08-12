@@ -1455,6 +1455,7 @@ const S = {
   inv:{}, hotIdx:0, equipped:'hands',
   charKey:'', vault:{}, vaultDer:0, vaultLoaded:false, fortLoaded:false, broken:new Set(),
   ammo:'arrow', escaped:false, tut:0, partsPending:false, partsAnnounced:false,
+  bossCycle:0, bossCleared:0,
   dur:{},
   camDist:3.1, camTight:false,
   inRun:false, vrOK:false,
@@ -2489,6 +2490,10 @@ function chestNear(){
    syncing them. Only hits and deaths travel over the wire.
    ============================================================ */
 const FIRE_ARROWS_TO_KILL=20;
+// How long the island stays cleared before the old things come back. Long
+// enough that whoever killed them gets an uncontested run to the wreck, short
+// enough that someone joining later is not locked out of the endgame.
+const BOSS_RESET_MS=900000;   // 15 minutes
 const BOSSES=[
   {id:'trex', name:'BONECREST TYRANT', part:'motor',
    win:[0.20,0.34], when:'early morning', where:'the radio mast',
@@ -2789,13 +2794,29 @@ function bossDown(b){
 }
 function bossKey(){ return 'sb:'+S.room+':boss'; }
 function pushBossState(){
-  const o={};
+  const o={cyc:S.bossCycle||0, cleared:S.bossCleared||0};
   BOSSES.forEach(b=>{ o[b.id]={d:b.dead?1:0,h:b.hits}; });
   Net.set(bossKey(),o);
   rtcSend({t:'boss',o:o},true);
 }
 function applyBossState(o){
   if(!o) return;
+  const cyc=o.cyc||0;
+  if(cyc > (S.bossCycle||0)){
+    // somebody else's client ran the reset; adopt it wholesale
+    S.bossCycle=cyc; S.bossCleared=o.cleared||0;
+    BOSSES.forEach(b=>{
+      const v=o[b.id]||{};
+      b.dead=!!v.d; b.hits=v.h||0;
+      if(!b.dead && b.mesh){ b.mesh.visible=false; }
+      if(b.dead && b.mesh){ scene.remove(b.mesh); b.mesh=null; }
+    });
+    S.partsAnnounced=false;
+    toast('The old things have returned to the island.');
+    return;
+  }
+  if(cyc < (S.bossCycle||0)) return;          // stale packet from before a reset
+  if(o.cleared && !S.bossCleared) S.bossCleared=o.cleared;
   BOSSES.forEach(b=>{
     const v=o[b.id]; if(!v) return;
     if(v.h>b.hits) b.hits=v.h;
@@ -2805,6 +2826,34 @@ function applyBossState(o){
     }
   });
   grantEndgameParts();
+}
+
+// Once every boss is down the island is marked cleared. After the cooldown any
+// client can wake them again — the cycle counter makes that idempotent, so two
+// clients resetting at once cannot double-reset or fight over it.
+function bossResetTick(){
+  if(S.phase!=='play') return;
+  if(!allBossesDown()){ S.bossCleared=0; return; }
+  if(!S.bossCleared){
+    S.bossCleared=now();
+    pushBossState();
+    return;
+  }
+  if(now()-S.bossCleared < BOSS_RESET_MS) return;
+  S.bossCycle=(S.bossCycle||0)+1;
+  S.bossCleared=0;
+  BOSSES.forEach(b=>{
+    b.dead=false; b.hits=0; b.cool=0;
+    if(b.mesh){ scene.remove(b.mesh); b.mesh=null; }
+  });
+  S.partsAnnounced=false;
+  pushBossState();
+  sfx('beast');
+  toast('Something moves at the mast again. The old things have come back.');
+}
+function bossResetIn(){
+  if(!S.bossCleared) return null;
+  return Math.max(0, BOSS_RESET_MS-(now()-S.bossCleared));
 }
 function haveAllParts(){ return BOSSES.every(b=>have(b.part)>0); }
 function allBossesDown(){ return BOSSES.every(b=>b.dead); }
@@ -4323,9 +4372,12 @@ function updateHUD(){
     const live=BOSSES.filter(b=>!b.dead);
     if(!live.length){
       bw.style.display='block';
-      $('v_boss').textContent = haveAllParts()
+      const left=bossResetIn();
+      const back = left===null ? '' :
+        ('  ·  they return in '+Math.max(1,Math.ceil(left/60000))+' min');
+      $('v_boss').textContent = (haveAllParts()
         ? 'RETURN TO THE WRECK'
-        : 'ALL THREE DOWN — PARTS ARE IN YOUR CHEST';
+        : 'ALL THREE DOWN — PARTS ARE IN YOUR CHEST') + back;
     }else{
       const nx=nextBossWindow();
       if(nx && nx.wait===0){
@@ -5503,7 +5555,7 @@ function frame(time){
     safe('camera',()=>updateCamera(dt));
     if(S.phase==='play') safe('survival',()=>survivalTick(dt));
     safe('beasts',()=>updateAnimals(dt));
-    safe('bosses',()=>updateBosses(dt));
+    safe('bosses',()=>{ updateBosses(dt); bossResetTick(); });
     safe('arrows',()=>updateArrows(dt));
     safe('debris',()=>updateParticles(dt));
     safe('crates',()=>{ refreshCrates(); regrowNodes(); });
