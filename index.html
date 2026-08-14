@@ -3216,6 +3216,9 @@ function validSpawn(type,x,z){
 }
 
 function isNight(){ return S.tod<0.22||S.tod>0.80; }
+// True while a new player is still working through the objectives. Wildlife
+// keeps its distance, so nobody is eaten before they know what STRIKE does.
+function tutGrace(){ return S.tut>=0 && S.phase==='play'; }
 
 function updateAnimals(dt){
   const amHost = (hostId===S.pid) || S.peers.size===0;
@@ -3238,6 +3241,11 @@ function updateAnimals(dt){
 
     const toP=new THREE.Vector3(S.pos.x-a.pos.x,0,S.pos.z-a.pos.z);
     const dist=toP.length();
+    if(tutGrace() && a.hurt<=0){
+      // it wants nothing to do with you yet
+      if(a.state==='chase'){ a.state='return'; a.chaseT=0; a.calm=6; }
+      a.hurt=0;
+    }
     a.calm=Math.max(0,a.calm-dt);
     // after breaking off it hunts less keenly for a while, so you don't get
     // re-acquired the instant you stop running
@@ -3262,7 +3270,7 @@ function updateAnimals(dt){
         if(dist<50) toast(d.name+' '+quit);
       }
     }
-    else if(a.state!=='flee' && S.phase==='play' && dist<det &&
+    else if(a.state!=='flee' && S.phase==='play' && dist<det && !tutGrace() &&
             ((d.agg && a.calm<=0) || a.hurt>0)){
       a.state='chase'; a.chaseT=0; a.losT=0; a.waterT=0;
     }
@@ -3697,6 +3705,7 @@ function updateArrows(dt){
         if(Math.hypot(an.pos.x-a.pos.x,an.pos.z-a.pos.z)<0.8 &&
            a.pos.y>an.pos.y-0.1 && a.pos.y<an.pos.y+1.8){
           const adm=a.dmg*ARC();
+          if(tutGrace()) tutEndGrace('You drew blood. They will remember it.');
           an.hp-=adm; an.hurt=2.4; an.state='chase'; flashHit(an);
           if(hostId && hostId!==S.pid && !rtcSendTo(hostId,{t:'a',a:an.id,d:adm},true))
             queueAHit(an.id,adm);
@@ -3774,6 +3783,7 @@ function doStrike(){
     if(hostId && hostId!==S.pid && !rtcSendTo(hostId,{t:'a',a:best.id,d:bdmg},true))
       queueAHit(best.id,bdmg);
     sfx('flesh'); sfx('beast');
+    if(tutGrace()) tutEndGrace('You drew blood. They will remember it.');
     if(best.hp<=0) killAnimal(best);
     wearTool();
     return;
@@ -4079,12 +4089,23 @@ const TUT=[
    d:'On your floor. Fire cooks meat and holds off the night cold within 7m.',
    ok:()=>ownsPiece('fi')},
   {t:'Eat something cooked',
-   d:'Kill a boar, stand over it and tap USE to harvest, then USE at your fire.',
+   d:'Hunt a boar with your spear, stand over it and tap USE to harvest, then USE at your fire. Striking any beast ends the truce.',
    ok:()=>have('cooked')>0||S.food>96}
 ];
 function tutSkip(){
   S.tut=-1; LS.set('sb_tut','1');
-  const el=$('tut'); if(el) el.style.display='none';
+  const el=$('tut'), hud=$('hud');
+  if(el) el.style.display='none';
+  if(hud) hud.classList.remove('tuton');
+  toast('The isle stops holding back.');
+}
+// Drawing blood forfeits the grace at once — otherwise you could farm a boar
+// that refuses to defend itself.
+function tutEndGrace(why){
+  if(S.tut<0) return;
+  S.tut=-1; LS.set('sb_tut','1');
+  tutRender();
+  toast(why||'The isle stops holding back.');
 }
 function tutRender(){
   const el=$('tut'), hud=$('hud'); if(!el) return;
@@ -5674,7 +5695,10 @@ async function startRun(){
     else if(Net.mode==='memory') toast('No storage: nothing you build will survive leaving.');
   },4200);
   toast('Find water before dark.');
-  if(S.tut>=0) setTimeout(()=>toast('Follow the card on the left — it will not let you starve.'),2600);
+  if(S.tut>=0){
+    setTimeout(()=>toast('Follow the card at the top — it will not let you starve.'),2600);
+    setTimeout(()=>toast('Nothing will hunt you until you finish it, or strike first.'),5200);
+  }
   toast('Storage: '+Net.label());
 }
 function resetRunState(){

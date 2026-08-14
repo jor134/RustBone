@@ -209,6 +209,11 @@ build a firepit, eat something cooked. Each step just watches your inventory —
 gated or blocked, and the card can be skipped. It is remembered per browser, so it never
 appears twice.
 
+While the card is up, wildlife will not attack: anything already chasing breaks off and
+nothing new aggros. The truce ends the moment the last objective completes, the card is
+skipped, or **you land a hit on any beast** — otherwise you could farm animals that
+refuse to defend themselves. Anyone who has finished the tutorial once starts hunted.
+
 ## Modes
 
 **Marooned — the long game.** Hunger and thirst drain 1.35x. Water runs dry in under seven
