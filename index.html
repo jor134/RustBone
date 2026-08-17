@@ -68,7 +68,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
   line-height:1.4;text-transform:uppercase;border:1px solid #2c4048;border-radius:3px;
   color:#8d9aa1;background:#0b1519;display:none}
 .ghostbtn:active{border-color:var(--rust);color:var(--rust)}
-.ghostbtn.armed{border-color:var(--rust);color:#e3b7a5}
+.ghostbtn.armed{border-color:var(--rust);color:#e3b7a5;background:#2a1109}
 #installsheet{position:fixed;inset:0;z-index:80;display:none;align-items:flex-end;
   justify-content:center;background:rgba(4,7,9,.72);padding:0}
 #installcard{width:100%;max-width:460px;background:linear-gradient(180deg,#152631,#0a1216);
@@ -287,6 +287,7 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
   <div id="modenote" class="note" style="margin-top:-4px">Marooned: hunger and thirst bite harder. Arcade: double resources per strike, wildlife dies twice as fast, bosses take ten fire arrows instead of twenty.</div>
   <button id="play" class="dsp">WASH ASHORE</button>
   <button id="sndbtn" class="ghostbtn" style="display:block">Sound on</button>
+  <button id="wipebtn" class="ghostbtn" style="display:block">Wipe this island</button>
   <button id="installbtn" class="ghostbtn">Add to home screen</button>
   <button id="fsbtn" class="ghostbtn">Play fullscreen</button>
   <button id="vrbtn">Enter VR</button>
@@ -419,6 +420,7 @@ const CFG = {
   POLL_SLOW: 3200,     // fort / world sync (ms)
   PEER_TTL: 14000,     // presence timeout (ms)
   DERELICT_MS: 300000, // 5 min lootable window after death
+  ABANDON_MS: 172800000, // 48h untouched -> the fort goes derelict on its own
   KEY_TTL: 259200      // 3 days (s)
 };
 
@@ -4672,6 +4674,19 @@ async function saveOnExit(){
   }catch(e){}
 }
 
+// Purge every key belonging to one island. Forts, vaults, caches, presence,
+// boss state, the seed — everything under sb:{ROOM}:. Used from the menu.
+async function wipeIsland(room){
+  const pre='sb:'+room+':';
+  let n=0;
+  const items=await Net.scan(pre);
+  for(const it of items){ try{ await Net.del(it.key); n++; }catch(e){} }
+  try{ await Net.del('sb:'+room+':world'); }catch(e){}
+  try{ await Net.del('sb:'+room+':ai'); }catch(e){}
+  try{ await Net.del('sb:'+room+':boss'); }catch(e){}
+  return n;
+}
+
 async function joinWorld(){
   let w=await Net.get(K.world());
   if(!w||!w.seed){
@@ -4831,6 +4846,18 @@ async function slowSync(){
   for(const it of items){
     const f=it.value; if(!f||!f.pieces) continue;
     if(f.derelict && now()-f.derelict>CFG.DERELICT_MS){ await Net.del(it.key); continue; }
+
+    // A fort whose owner never comes back used to stand forever: it is not
+    // derelict, so nothing can be broken but its door, and the owner key is
+    // dead so nobody can salvage it either. Orphan forts now rot on their own.
+    // Anything written before ownership moved to name+island has no char field
+    // at all and can never be claimed again — those rot immediately.
+    const stale = !f.derelict &&
+      ((!f.char) || (f.ts && now()-f.ts > CFG.ABANDON_MS));
+    if(stale && f.o!==ME()){
+      f.derelict = f.ts ? Math.min(f.ts + CFG.ABANDON_MS, now()) : now();
+      try{ await Net.set(K.fort(f.o), f); }catch(e){}
+    }
     const isMine = !f.derelict && f.o===ME();
     for(const p of f.pieces){
       const rec=Object.assign({},p,{o:f.o,char:f.char,
@@ -5784,6 +5811,30 @@ function boot(){
       '2. Create the Upstash store, then REDEPLOY — Vercel only injects env vars into builds made after you add them.\n'+
       '3. Open /api/kv?op=ping in a browser tab. It lists every env var name it can actually see.');
   });
+  const wb=$('wipebtn');
+  if(wb) wb.addEventListener('click',async ()=>{
+    const room=($('i_room').value||'REEF01').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6)||'REEF01';
+    if(wb.dataset.armed!==room){
+      wb.dataset.armed=room;
+      wb.textContent='Tap again to erase '+room+' for everyone';
+      wb.classList.add('armed');
+      setTimeout(()=>{ if(wb.dataset.armed===room){ wb.dataset.armed='';
+        wb.textContent='Wipe this island'; wb.classList.remove('armed'); } },6000);
+      return;
+    }
+    wb.dataset.armed=''; wb.classList.remove('armed');
+    wb.textContent='Wiping…';
+    try{
+      const n=await wipeIsland(room);
+      LS.del('sb_char_'+room); LS.del('sb_pid_'+room);
+      wb.textContent='Erased '+n+' records on '+room;
+      showErr(room+' has been cleared: '+n+' records deleted.\n\n'+
+        'Forts, chests, caches, boss progress and the island seed are gone.\n'+
+        'Anyone still in that room should return to the menu and rejoin —\n'+
+        'their client is holding the old world in memory.');
+    }catch(e){ wb.textContent='Wipe failed — '+e.message; }
+  });
+
   addEventListener('pagehide',()=>{ if(S.phase==='play') saveOnExit(); });
   addEventListener('visibilitychange',()=>{ if(document.hidden&&S.phase==='play') saveOnExit(); });
   addEventListener('beforeunload',()=>{ if(S.phase==='play') saveOnExit(); });

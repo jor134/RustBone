@@ -229,3 +229,26 @@ Damage to other players is **not** scaled. Arcade is meant to shorten the grind,
 a mode selection into a PvP advantage on a shared island.
 
 The choice persists per browser and shows in the HUD next to the island code.
+
+## Clearing an island
+
+Type the island code on the menu and press **Wipe this island** twice. It deletes every
+key under `sb:{ROOM}:` — forts, chests, death caches, presence, boss state and the seed.
+There is no auth on it: anyone who knows a room code can wipe that room. That is fine for
+a room code shared with friends, and wrong for anything public. If this ever ships wider,
+move the sweep behind an `op` in `api/kv.js` gated on an `ADMIN_KEY` env var.
+
+Anyone still standing in the room when it is wiped is holding the old world in memory and
+should return to the menu and rejoin.
+
+### Why forts used to stand forever
+
+A fort could only be demolished by its owner, or raided while flagged derelict — and a
+fort only goes derelict when its owner **dies**. Log out instead of dying and it stood
+indefinitely. Worse, anything built before ownership moved to island+name (build 8) has a
+random owner key nobody can ever hold again: unsalvageable by anyone, and never derelict,
+so not even a raider could break more than its door.
+
+Forts now rot on their own: no `char` field at all (a pre-build-8 orphan) rots
+immediately, and any fort untouched for `ABANDON_MS` (48h) goes derelict and then clears
+through the normal five-minute window.
